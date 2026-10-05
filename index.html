@@ -10,10 +10,28 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
-<div class="login" id="login" hidden>
+<div class="boot-err" id="bootErr" hidden>
+  <b>Aplikace se nenačetla celá.</b>
+  <span>Nejspíš se zrovna nahrává nová verze. Zkus to znovu.</span>
+  <button id="bootBtn">Načíst znovu</button>
+</div>
+<script>
+window.addEventListener('error', function () { var e = document.getElementById('bootErr'); if (e) e.hidden = false; });
+document.addEventListener('click', function (ev) {
+  if (!ev.target || ev.target.id !== 'bootBtn') return;
+  var go = function () { location.reload(); };
+  try {
+    var p = [];
+    if (navigator.serviceWorker) p.push(navigator.serviceWorker.getRegistrations().then(function (r) { return Promise.all(r.map(function (x) { return x.unregister(); })); }));
+    if (window.caches) p.push(caches.keys().then(function (k) { return Promise.all(k.map(function (x) { return caches.delete(x); })); }));
+    Promise.all(p).then(go, go);
+  } catch (e) { go(); }
+});
+</script>
+<div class="login" id="login">
   <div class="lg-card">
     <div class="lg-brand"><span class="logo lg-logo" data-ic="logo"></span><div><div class="lg-title">Lisy na hale</div><div class="lg-sub">Předávání směny · přihlášení</div></div></div>
     <div id="lgStep1">
@@ -109,9 +127,9 @@
 <datalist id="products"></datalist>
 <input type="file" id="fileIn" accept=".json,application/json" hidden>
 
-<script src="qrcode.js"></script>
-<script src="lz-string.min.js"></script>
-<script src="jsQR.js"></script>
-<script src="app.js"></script>
+<script src="qrcode.js?v=12"></script>
+<script src="lz-string.min.js?v=12"></script>
+<script src="jsQR.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

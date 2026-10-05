@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '11';
+const VERSION = '12';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -821,22 +821,26 @@ function openUserMenu() {
     <span class="flbl">Vzhled</span>
     <div class="seg">${Object.entries(THEMES).map(([k, v]) => `<button data-u="theme" data-t="${k}" aria-pressed="${k === theme}">${ic(v[0])}${{ auto: 'Podle telefonu', light: 'Světlý', dark: 'Tmavý' }[k]}</button>`).join('')}</div>
     <button class="secondary" data-u="logout">${ic('logout')}Odhlásit</button>
+    <button class="secondary" data-u="update">${ic('swap')}Načíst nejnovější verzi</button>
     <p class="hint" style="margin:0;text-align:center">Lisy na hale · verze ${VERSION}</p>`;
   $('dlg2').showModal();
   $('sheet2').onclick = e => {
     const b = e.target.closest('[data-u]'); if (!b) return;
     if (b.dataset.u === 'close') closeDlg2();
     if (b.dataset.u === 'logout') logout();
+    if (b.dataset.u === 'update') { closeDlg2(); $('bootBtn').click(); }
     if (b.dataset.u === 'theme') { theme = b.dataset.t; applyTheme(theme); $('sheet2').querySelectorAll('[data-u="theme"]').forEach(x => x.setAttribute('aria-pressed', x.dataset.t === theme)); }
   };
 }
 $('userBtn').addEventListener('click', openUserMenu);
 document.querySelectorAll('[data-ic]').forEach(el => el.insertAdjacentHTML('afterbegin', ic(el.dataset.ic)));
 renderAll();
+const s0 = getSession();
+if (s0) { S.who = s0.name; $('login').hidden = true; setAv($('userAv'), S.who); renderAll(); }
 (async () => {
   await loadUsers();
   const s = getSession();
-  if (s && USERS.some(u => u.name === s.name)) { S.who = s.name; setAv($('userAv'), S.who); renderAll(); }
+  if (s && (USERS.some(u => u.name === s.name) || !USERS.length)) { S.who = s.name; $('login').hidden = true; setAv($('userAv'), S.who); renderAll(); }
   else { try { lgUser = localStorage.getItem('lisy-last-user'); } catch (e) {} showLogin(lgUser && USERS.some(u => u.name === lgUser) ? 'pin' : undefined); }
 })();
 setInterval(() => { if (!$('login').hidden) return; const s = getSession(); if (!s) { lgUser = S.who; showLogin('pin'); } }, 60000);
