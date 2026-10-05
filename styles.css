@@ -9,7 +9,7 @@
 :root{
   --bg:#eef0f2; --panel:#ffffff; --line:#d5d9de; --fg:#1b2026; --muted:#5d6670;
   --accent:#e0a100; --accent-ink:#1b2026;
-  --ok:#2f8a4e; --warn:#c77700; --crit:#c8322b; --stop:#8a3fb8; --idle:#8a929b;
+  --ok:#2f8a4e; --warn:#c77700; --crit:#c8322b; --stop:#8a3fb8; --done:#2f6db5; --idle:#8a929b;
   --f-display:"Barlow Condensed","Arial Narrow",sans-serif;
   --f-body:"Barlow",system-ui,sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,monospace;
@@ -18,7 +18,7 @@
 @media (prefers-color-scheme: dark){:root{
   --bg:#14181c; --panel:#1e242a; --line:#323a42; --fg:#e8ecef; --muted:#9aa4ae;
   --accent:#f0b419; --accent-ink:#14181c;
-  --ok:#4cb06c; --warn:#e69a2e; --crit:#ef5a52; --stop:#b77ae0; --idle:#6c757e; color-scheme:dark}}
+  --ok:#4cb06c; --warn:#e69a2e; --crit:#ef5a52; --stop:#b77ae0; --done:#6aa3e8; --idle:#6c757e; color-scheme:dark}}
 
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -124,5 +124,19 @@ input[type=search]{margin-top:10px}
 .acts.end button{flex:1}
 .sm.end{background:var(--fg);border-color:var(--fg);color:var(--bg);font-weight:600}
 .chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.bigbtns.two{grid-template-columns:1fr 1fr}
+.cnt{font:600 .9rem var(--f-body);color:var(--muted);text-transform:none;letter-spacing:0}
+.src{display:flex;justify-content:space-between;gap:8px}
+.ver{opacity:.7;white-space:nowrap}
+.slot.run.st-stop{border-color:var(--stop)}
+.slot.run.st-end{border-color:var(--done)}
+.slot.run.st-stop .lbl{color:var(--stop)}
+.slot.run.st-end .lbl{color:var(--done)}
+.slot.q{padding:0}
+.slot.q.sel{border-color:var(--fg)}
+.slot.q > .acts,.slot.q > .hint,.slot.q > .mv{padding:0 10px 10px}
+.qrow{display:flex;align-items:center;gap:8px;padding:10px;cursor:pointer;min-height:52px}
+.qn{color:var(--muted);font-weight:600;width:1.2em}
+.qhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:6px;flex-wrap:wrap}
 .toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:6px;font-weight:600;z-index:50;max-width:90vw;text-align:center}
 @media (prefers-reduced-motion:no-preference){.tile{transition:transform .12s}.tile:active{transform:scale(.98)}}

@@ -18,7 +18,7 @@
     <h1>Lisy na hale</h1>
     <div class="shift"><span id="shiftName"></span> · konec <b class="mono" id="shiftEnd"></b></div>
   </div>
-  <div class="src" id="srcInfo"></div>
+  <div class="src"><span id="srcInfo"></span> <span id="ver" class="ver"></span></div>
   <div class="chips" id="filters" role="group" aria-label="Filtr lisů">
     <button class="chip" data-f="all" aria-pressed="true">Všechny</button>
     <button class="chip" data-f="shift" aria-pressed="false">Končí tuto směnu</button>
@@ -44,8 +44,12 @@
   </section>
 
   <section id="v-katalog" hidden>
-    <h2>Katalog výrobků</h2>
+    <h2>Katalog výrobků <span class="cnt" id="catCount"></span></h2>
     <p class="hint">Výrobky, které jdou vybrat při zadávání k lisu.</p>
+    <div class="bigbtns two">
+      <button class="secondary" id="btnCatGive">Sdílet katalog</button>
+      <button class="secondary" id="btnCatTake">Načíst katalog</button>
+    </div>
     <form class="cat-add" id="catForm">
       <input type="text" id="catNew" placeholder="Název výrobku" aria-label="Nový výrobek">
       <button class="primary" type="submit">Přidat</button>

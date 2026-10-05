@@ -1,5 +1,5 @@
 // Offline cache. Při každé změně aplikace zvyš číslo verze.
-const CACHE = 'lisy-v5';
+const CACHE = 'lisy-v7';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'qrcode.js', 'lz-string.min.js', 'jsQR.js',
   'icon-192.png', 'icon-512.png',
@@ -14,7 +14,7 @@ self.addEventListener('activate', e => {
 // Network first (aby se nová verze projevila), při výpadku z cache.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(fetch(e.request).then(r => {
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(r => {
     const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r;
   }).catch(() => caches.match(e.request, { ignoreSearch: true })));
 });
