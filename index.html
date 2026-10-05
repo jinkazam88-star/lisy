@@ -27,9 +27,10 @@
   <div class="stats" id="filters" role="group" aria-label="Filtr lisů">
     <button class="stat" data-f="all" aria-pressed="true"><b id="cAll">0</b><span>Vše</span></button>
     <button class="stat s-run" data-f="run" aria-pressed="false"><b id="cRun">0</b><span>Běží</span></button>
-    <button class="stat s-warn" data-f="shift" aria-pressed="false"><b id="cShift">0</b><span>Končí směnu</span></button>
+    <button class="stat s-warn" data-f="shift" aria-pressed="false"><b id="cShift">0</b><span>Končí</span></button>
     <button class="stat s-idle" data-f="idle" aria-pressed="false"><b id="cIdle">0</b><span>Stojí</span></button>
   </div>
+  <div class="fhint" id="fhint" hidden></div>
 </header>
 
 <main>
@@ -46,6 +47,20 @@
     <div class="list" id="handover"></div>
     <h2>Poslední změny</h2>
     <div class="list" id="log"></div>
+  </section>
+
+  <section id="v-poznamky" hidden>
+    <h2>Poznámky pro směnu</h2>
+    <p class="hint">Co má vědět další směna. Poznámky se předávají spolu se směnou.</p>
+    <form class="noteform" id="noteForm">
+      <select id="noteLis" aria-label="Ke kterému lisu"></select>
+      <textarea id="noteText" rows="3" placeholder="Např. na lisu 4 dochází materiál, neuklizené hadice u lisu 10…" aria-label="Text poznámky"></textarea>
+      <button class="primary" type="submit" data-ic="plus">Přidat poznámku</button>
+    </form>
+    <h2>Otevřené <span class="cnt" id="noteCount"></span></h2>
+    <div class="list" id="notesOpen"></div>
+    <h2>Vyřešené</h2>
+    <div class="list" id="notesDone"></div>
   </section>
 
   <section id="v-katalog" hidden>
@@ -67,6 +82,7 @@
 <nav>
   <button data-v="hala" aria-current="page" data-ic="grid">Hala</button>
   <button data-v="predani" data-ic="swap">Předání</button>
+  <button data-v="poznamky" data-ic="note">Poznámky<span class="nbadge" id="navNotes" hidden></span></button>
   <button data-v="katalog" data-ic="list">Katalog</button>
 </nav>
 

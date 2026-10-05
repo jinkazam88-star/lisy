@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '9';
+const VERSION = '10';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -9,11 +9,12 @@ const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4
 function emptyState() {
   const presses = [];
   for (let i = 1; i <= PRESS_COUNT; i++) presses.push({ id: i, name: 'Lis ' + String(i).padStart(2, '0'), slots: [null, null, null, null, null] });
-  return { v: 1, presses, catalog: [], log: [], who: '', updated: 0, from: null };
+  return { v: 1, presses, catalog: [], log: [], notes: [], who: '', updated: 0, from: null };
 }
 let S;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
 if (!S || !Array.isArray(S.presses)) S = emptyState();
+if (!Array.isArray(S.notes)) S.notes = [];
 // převod dat ze starších verzí
 S.presses.forEach(p => {
   p.slots = p.slots.map((x, k) => { if (!x) return null; if (k > 0) return { p: x.p }; if (!x.state) { x.state = x.stopped ? 'stop' : 'run'; delete x.stopped; } delete x.dur; return x; });
@@ -90,6 +91,7 @@ const ICONS = {
   qr: '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2v2M18 14h2"/>',
   scan: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/>',
   share: '<path d="M12 15V3M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>', save: '<path d="M6 3h12v18l-6-4-6 4z"/>',
+  note: '<path d="M5 4h14v11l-5 5H5zM14 20v-5h5M8 9h8M8 13h4"/>',
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/>', chev: '<path d="M9 6l6 6-6 6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
@@ -124,6 +126,9 @@ function renderGrid() {
   $('cRun').textContent = S.presses.filter(p => isRun(p.slots[0])).length;
   $('cShift').textContent = S.presses.filter(p => isRun(p.slots[0]) && p.slots[0].end && p.slots[0].end <= se).length;
   $('cIdle').textContent = S.presses.filter(p => !isRun(p.slots[0])).length;
+  const FH = { run: 'Lisy, na kterých právě běží výroba.', shift: 'Lisy, kterým výroba skončí do konce této směny (do ' + pad(new Date(se).getHours()) + ':00).', idle: 'Lisy, které nevyrábí: prázdné, zastavené nebo s ukončenou výrobou.' };
+  $('fhint').hidden = filter === 'all';
+  if (filter !== 'all') $('fhint').innerHTML = `<span>${FH[filter]}</span><button data-f="all" class="stat-reset">Zobrazit vše</button>`;
   $('grid').innerHTML = list.map(p => {
     const st = status(p), r = p.slots[0], q = p.slots.slice(1).filter(Boolean);
     let body;
@@ -137,7 +142,7 @@ function renderGrid() {
         <div class="t-meta"><span class="mono">${fmtEnd(r.end).replace('dnes ', '')}</span><b class="mono">${left < 0 ? '+' : ''}${hh ? hh + ' h ' : ''}${mm} min</b></div>`;
     }
     return `<button class="tile ${r ? '' : 'empty'}" style="--st:${st.c}" data-open="${p.id}">
-      <div class="t-top"><span class="no">${esc(p.name)}</span><span class="pill">${st.t}</span></div>
+      <div class="t-top"><span class="no">${esc(p.name)}</span><span class="right">${openNotes(p.id).length ? `<span class="tnote" title="Poznámky">${ic('note')}${openNotes(p.id).length}</span>` : ''}<span class="pill">${st.t}</span></span></div>
       ${body}
       <div class="q">${q.length ? 'Další: <b>' + esc(q[0].p) + '</b>' + (q.length > 1 ? ' +' + (q.length - 1) : '') : 'Pořadí prázdné'}</div>
     </button>`;
@@ -170,7 +175,61 @@ function renderCatalog() {
     || '<p class="hint">Katalog je prázdný. Výrobky přidáš tady nebo při zadávání k lisu.</p>';
   $('products').innerHTML = S.catalog.map(c => `<option value="${esc(c)}">`).join('');
 }
-function renderAll() { renderHeader(); renderGrid(); renderHandover(); renderCatalog(); if ($('dlg').open) drawSheet(); }
+/* ============ Poznámky ============ */
+const openNotes = id => S.notes.filter(n => !n.done && (id === undefined || n.lis === id));
+const noteTag = n => n.lis ? esc((press(n.lis) || {}).name || 'Lis ' + n.lis) : 'Obecné';
+function noteHtml(n) {
+  return `<div class="note ${n.done ? 'done' : ''}">
+    <div class="nhead"><span class="ntag">${noteTag(n)}</span><span class="nmeta">${esc(n.who || '?')} · ${fmtEnd(n.t)}</span></div>
+    <div class="ntext">${esc(n.text)}</div>
+    ${n.done ? `<div class="nmeta">vyřešil ${esc(n.doneBy || '?')} · ${fmtEnd(n.doneT)}</div>` : ''}
+    <div class="acts">${n.done
+      ? `<button class="sm" data-note="reopen" data-id="${n.id}">Vrátit</button><button class="sm del" data-note="del" data-id="${n.id}">${ic('trash')}Smazat</button>`
+      : `<button class="sm go" data-note="done" data-id="${n.id}">${ic('done')}Vyřešeno</button>`}</div>
+  </div>`;
+}
+function renderNotes() {
+  const sel = $('noteLis'), cur = sel.value;
+  sel.innerHTML = '<option value="0">Obecná poznámka (celá hala)</option>' + S.presses.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  if (cur) sel.value = cur;
+  const open = S.notes.filter(n => !n.done).sort((a, b) => b.t - a.t), done = S.notes.filter(n => n.done).sort((a, b) => b.doneT - a.doneT).slice(0, 30);
+  $('notesOpen').innerHTML = open.map(noteHtml).join('') || '<p class="hint">Žádné otevřené poznámky.</p>';
+  $('notesDone').innerHTML = done.map(noteHtml).join('') || '<p class="hint">Zatím nic.</p>';
+  $('noteCount').textContent = open.length || '';
+  $('navNotes').textContent = open.length; $('navNotes').hidden = !open.length;
+}
+function addNote(lis, text) {
+  S.notes.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), lis: +lis || 0, text, who: S.who || '', t: Date.now(), done: false });
+  log(+lis || 0, 'poznámka: ' + text.slice(0, 40));
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-note]'); if (!b) return;
+  const n = S.notes.find(x => x.id === b.dataset.id); if (!n) return;
+  const k = b.dataset.note;
+  if (k === 'done') { n.done = true; n.doneBy = S.who || ''; n.doneT = Date.now(); log(n.lis, 'vyřešeno: ' + n.text.slice(0, 40)); }
+  if (k === 'reopen') { n.done = false; }
+  if (k === 'del') { if (!b.dataset.sure) { b.dataset.sure = 1; b.lastChild.textContent = 'Opravdu?'; return; } S.notes = S.notes.filter(x => x !== n); }
+  save(); renderAll();
+});
+$('noteForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const t = $('noteText').value.trim(); if (!t) { toast('Napiš text poznámky'); return; }
+  addNote($('noteLis').value, t); $('noteText').value = ''; save(); renderAll(); toast('Poznámka přidána');
+});
+function openNoteDlg(p) {
+  $('sheet2').onclick = null;
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>Poznámka · ${esc(p.name)}</h3><button class="x" data-n2="close" aria-label="Zavřít">${ic('x')}</button></div>
+    <textarea id="n2Text" rows="4" placeholder="Např. dochází materiál, neuklizené hadice…"></textarea>
+    <div class="acts end"><button class="secondary" data-n2="close">Zrušit</button><button class="primary" data-n2="ok">Přidat poznámku</button></div>`;
+  $('dlg2').showModal(); setTimeout(() => $('n2Text').focus(), 50);
+  $('sheet2').onclick = e => {
+    const b = e.target.closest('[data-n2]'); if (!b) return;
+    if (b.dataset.n2 === 'ok') { const t = $('n2Text').value.trim(); if (!t) { toast('Napiš text poznámky'); return; } addNote(p.id, t); save(); }
+    closeDlg2(); renderAll();
+  };
+}
+
+function renderAll() { renderHeader(); renderGrid(); renderHandover(); renderCatalog(); renderNotes(); if ($('dlg').open) drawSheet(); }
 
 /* ============ Press detail sheet ============ */
 let editId = null, moveIdx = null, selQ = null, confirmOff = false;
@@ -240,9 +299,11 @@ function drawSheet() {
   $('sheet').innerHTML = `<div class="sh-head"><h3>${esc(p.name)} <span class="pill" style="--st:${st.c}">${st.t}</span></h3>
       <div class="tools"><button class="icb" data-a="rename" aria-label="Přejmenovat lis">${ic('edit')}</button><button class="x" data-a="close" aria-label="Zavřít">${ic('x')}</button></div></div>
     ${runHtml(p)}
+    ${openNotes(p.id).map(noteHtml).join('')}
     <div class="qhead"><span class="flbl">Další výrobky</span><span class="hint" style="margin:0">klepni pro možnosti · táhni za úchyt</span></div>
     ${q.map((s, k) => s ? queueHtml(p, s, k + 1) : '').join('')}
-    ${q.some(x => !x) ? `<button class="addq" data-a="qadd">${ic('plus')}Přidat výrobek do pořadí</button>` : '<p class="hint" style="margin:0">Pořadí je plné (4 výrobky).</p>'}`;
+    ${q.some(x => !x) ? `<button class="addq" data-a="qadd">${ic('plus')}Přidat výrobek do pořadí</button>` : '<p class="hint" style="margin:0">Pořadí je plné (4 výrobky).</p>'}
+    <button class="addq" data-a="note">${ic('note')}Přidat poznámku k lisu</button>`;
   if (moveIdx !== null && $('mvLis')) { const first = $('mvLis').querySelector('option:not([disabled])'); if (first) $('mvLis').value = first.value; fillPosOptions(); }
   $('dlg').scrollTop = sc;
 }
@@ -297,6 +358,7 @@ $('sheet').addEventListener('click', ev => {
   switch (a) {
     case 'close': $('dlg').close(); return;
     case 'rename': openRename(p); return;
+    case 'note': return openNoteDlg(p);
     case 'sel': selQ = selQ === i ? null : i; moveIdx = null; drawSheet(); return;
     case 'newrun': return openEditor({ mode: 'newrun' });
     case 'deploy': return openEditor({ mode: 'deploy', k: i });
@@ -497,6 +559,7 @@ function packState(withCatalog) {
   const l = S.presses.map(p => [p.id, p.name, ...p.slots.map((s, k) => !s ? 0 : k > 0 ? [idx(s.p)] : [idx(s.p), rel(s.end), { run: 0, stop: 1, end: 2 }[s.state] || 0, s.note || '', rel(s.since)]), p.idle ? [rel(p.idle.since), p.idle.last || ''] : 0]);
   const o = { t: t0, w: S.who || '', n: names, l };
   if (withCatalog) o.c = S.catalog;
+  o.nt = S.notes.filter(n => !n.done || Date.now() - n.doneT < 48 * H).slice(-60).map(n => [n.id, n.lis, n.text, n.who, rel(n.t), n.done ? 1 : 0, n.doneBy || '', rel(n.doneT)]);
   return o;
 }
 const catPack = () => ({ k: S.catalog, w: S.who || '', t: Math.floor(Date.now() / M) });
@@ -509,7 +572,8 @@ function unpack(o) {
     slots: rest.slice(0, 5).map((s, k) => !s ? null : k > 0 ? { p: o.n[s[0]] }
       : { p: o.n[s[0]], end: abs(s[1]), state: ['run', 'stop', 'end'][s[2]] || 'run', note: s[3] || '', since: abs(s[4]) })
   }));
-  return { kind: 'shift', presses, catalog: o.c || [], who: o.w, t: o.t * M };
+  const notes = (o.nt || []).map(a => ({ id: a[0], lis: a[1], text: a[2], who: a[3], t: abs(a[4]), done: !!a[5], doneBy: a[6], doneT: abs(a[7]) }));
+  return { kind: 'shift', presses, catalog: o.c || [], notes, who: o.w, t: o.t * M };
 }
 function decodeText(txt) {
   txt = (txt || '').trim();
@@ -635,7 +699,7 @@ function previewImport(txt) {
   const used = pending.presses.filter(p => p.slots[0]).length;
   const older = S.updated && pending.t < S.updated;
   $('takeMsg').innerHTML = `<div class="preview">Od: <b>${esc(pending.who || '?')}</b>, ${fmtEnd(pending.t)}<br>
-    Obsazených lisů: <b>${used}</b> z ${pending.presses.length}${pending.catalog.length ? `<br>Katalog: ${pending.catalog.length} výrobků (doplní se k tvému)` : ''}
+    Obsazených lisů: <b>${used}</b> z ${pending.presses.length}${pending.notes && pending.notes.filter(n => !n.done).length ? `<br>Otevřené poznámky: <b>${pending.notes.filter(n => !n.done).length}</b>` : ''}${pending.catalog.length ? `<br>Katalog: ${pending.catalog.length} výrobků (doplní se k tvému)` : ''}
     ${older ? '<br><b style="color:var(--crit)">Pozor: tvoje data v telefonu jsou novější než tohle předání.</b>' : ''}</div>
     <p class="hint">Stav lisů v tomto telefonu se nahradí předaným stavem.</p>
     <button class="primary" data-b="apply">Převzít směnu</button>`;
@@ -648,6 +712,7 @@ function applyImport() {
     pending = null; save(); renderAll(); closeDlg2(); toast('Přidáno ' + n + ' výrobků do katalogu'); return;
   }
   S.presses = pending.presses;
+  (pending.notes || []).forEach(n => { const i = S.notes.findIndex(x => x.id === n.id); if (i < 0) S.notes.push(n); else S.notes[i] = n; });
   pending.catalog.forEach(addToCatalog);
   pending.presses.forEach(p => p.slots.forEach(s => s && addToCatalog(s.p)));
   S.from = { who: pending.who, t: pending.t };
@@ -660,15 +725,15 @@ function toast(t) { const e = document.createElement('div'); e.className = 'toas
 document.addEventListener('click', e => {
   const o = e.target.closest('[data-open]'); if (o) return openSheet(+o.dataset.open);
   const f = e.target.closest('[data-f]');
-  if (f && f.classList.contains('stat')) {
-    filter = f.dataset.f; document.querySelectorAll('.stat').forEach(x => x.setAttribute('aria-pressed', x === f)); renderGrid();
+  if (f && (f.classList.contains('stat') || f.classList.contains('stat-reset'))) {
+    filter = f.dataset.f; document.querySelectorAll('.stat').forEach(x => x.setAttribute('aria-pressed', x.dataset.f === filter)); renderGrid();
     if ($('v-hala').hidden) document.querySelector('nav [data-v="hala"]').click();
     return;
   }
   const v = e.target.closest('nav [data-v]');
   if (v) {
     document.querySelectorAll('nav [data-v]').forEach(x => x === v ? x.setAttribute('aria-current', 'page') : x.removeAttribute('aria-current'));
-    ['hala', 'predani', 'katalog'].forEach(n => $('v-' + n).hidden = n !== v.dataset.v);
+    ['hala', 'predani', 'poznamky', 'katalog'].forEach(n => $('v-' + n).hidden = n !== v.dataset.v);
     window.scrollTo(0, 0); return;
   }
   const d = e.target.closest('[data-catdel]');

@@ -54,6 +54,7 @@ svg.i{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-widt
 h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:700 1.35rem/1.05 var(--f-display);letter-spacing:.04em;margin:0;text-transform:uppercase}
 .src{display:flex;gap:8px;font-size:.75rem;color:var(--bar-muted);white-space:nowrap;overflow:hidden}
 .src span:first-child{overflow:hidden;text-overflow:ellipsis}
+.src span:first-child:empty{display:none}
 .ver{opacity:.8}
 .themebtn{width:40px;height:40px;display:grid;place-items:center;border-radius:var(--r-sm);border:1px solid var(--bar-line);background:var(--bar-2);color:var(--bar-fg);padding:0;flex:none}
 .hright{display:flex;align-items:center;gap:10px;flex:none}
@@ -63,7 +64,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:700 1.35rem/1.
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
 .stat{--c:var(--bar-fg);background:var(--bar-2);border:1px solid var(--bar-line);border-radius:var(--r-sm);padding:7px 4px 6px;display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--bar-muted);min-width:0}
 .stat b{font:700 1.35rem/1 var(--f-display);color:var(--c)}
-.stat span{font-size:.7rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.stat span{font-size:.72rem;font-weight:600;letter-spacing:.03em;text-transform:uppercase;line-height:1.15;text-align:center;max-width:100%;overflow-wrap:anywhere}
 .stat.s-run{--c:var(--ok)} .stat.s-warn{--c:var(--warn)} .stat.s-idle{--c:var(--idle)}
 .stat[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bar-2));color:var(--bar-fg)}
 
@@ -103,7 +104,7 @@ h2{font:700 1.05rem var(--f-display);text-transform:uppercase;letter-spacing:.06
 .cnt{font:600 .85rem var(--f-body);color:var(--faint);text-transform:none;letter-spacing:0;margin-left:6px}
 
 /* ---------- nav ---------- */
-nav{position:fixed;left:0;right:0;bottom:0;z-index:6;display:grid;grid-template-columns:repeat(3,1fr);background:var(--panel);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px rgb(16 24 32 / .06)}
+nav{position:fixed;left:0;right:0;bottom:0;z-index:6;display:grid;grid-template-columns:repeat(4,1fr);background:var(--panel);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px rgb(16 24 32 / .06)}
 nav button{background:none;border:0;padding:8px 4px 9px;font-weight:600;font-size:.75rem;letter-spacing:.03em;color:var(--faint);display:flex;flex-direction:column;align-items:center;gap:3px;position:relative}
 nav button svg.i{width:22px;height:22px}
 nav button[aria-current="page"]{color:var(--fg)}
@@ -181,5 +182,29 @@ dialog::backdrop{background:rgb(8 12 16 / .55)}
 .qrbox{background:#fff;padding:12px;border-radius:var(--r);align-self:center;width:100%;max-width:360px;box-shadow:var(--shadow)}
 .qrbox svg{display:block;width:100%;height:auto}
 .cam{width:100%;border-radius:var(--r);background:#000;aspect-ratio:1;object-fit:cover}
+.fhint{margin-top:8px;font-size:.8rem;color:var(--bar-muted);display:flex;justify-content:space-between;gap:8px;align-items:center}
+.fhint button{background:none;border:0;color:var(--accent);font-weight:700;font-size:.8rem;padding:4px 0;white-space:nowrap}
+.nbadge{position:absolute;top:4px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--crit);color:#fff;font-size:.7rem;font-weight:700;display:grid;place-items:center;line-height:1}
+textarea{width:100%;min-width:0;border:1px solid var(--line-2);background:var(--panel);border-radius:var(--r-sm);padding:10px 12px;font:inherit;color:inherit;resize:vertical;min-height:84px}
+textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 30%,transparent)}
+.noteform{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.note{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow)}
+.note.done{border-left-color:var(--line-2);opacity:.75;box-shadow:none}
+.note.done .ntext{text-decoration:line-through;text-decoration-color:var(--faint)}
+.nhead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ntag{font:700 .95rem var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.nmeta{font-size:.78rem;color:var(--faint)}
+.ntext{white-space:pre-wrap;overflow-wrap:anywhere}
+.tnote{display:inline-flex;align-items:center;gap:2px;color:var(--warn);font-size:.75rem;font-weight:700}
+.tnote svg.i{width:15px;height:15px}
+.t-top .right{display:flex;align-items:center;gap:6px}
 .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--bar);color:var(--bar-fg);padding:11px 16px;border-radius:var(--r-sm);font-weight:600;z-index:50;max-width:90vw;text-align:center;box-shadow:0 6px 20px rgb(0 0 0 / .3)}
 @media (prefers-reduced-motion:no-preference){.tile{transition:transform .12s}.tile:active{transform:scale(.98)}}
+@media (max-width:400px){
+  h1{font-size:1.12rem}
+  .logo{width:32px;height:32px}
+  .clock b{font-size:1.25rem}
+  .clock > span{font-size:.7rem}
+  .themebtn{width:36px;height:36px}
+  .hrow,.hright,.brand{gap:8px}
+}
