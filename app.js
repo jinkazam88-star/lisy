@@ -146,7 +146,7 @@ function slotHtml(p, s, i) {
       ${!run && s ? `${i > 1 ? `<button class="sm" data-a="up" data-i="${i}" aria-label="Výš">↑</button>` : ''}${i < 4 ? `<button class="sm" data-a="down" data-i="${i}" aria-label="Níž">↓</button>` : ''}` : ''}
     </div>
     <div class="fields">
-      ${locked ? `<div class="ro">${esc(s.p)}</div>` : `<input type="text" data-f="p" data-i="${i}" list="products" placeholder="Vyber nebo napiš výrobek" value="${s ? esc(s.p) : ''}" aria-label="Výrobek – ${SLOT_NAMES[i]}" enterkeyhint="done">`}
+      ${locked ? `<div class="ro">${esc(s.p)}</div>` : `<input type="text" data-f="p" data-i="${i}" autocomplete="off" placeholder="Vyber z katalogu nebo napiš" value="${s ? esc(s.p) : ''}" aria-label="Výrobek – ${SLOT_NAMES[i]}" enterkeyhint="done">`}
       <input type="datetime-local" data-f="end" data-i="${i}" value="${s ? toLocal(s.end) : ''}" aria-label="Předpokládaný konec – ${SLOT_NAMES[i]}" ${s ? '' : 'disabled'}>
     </div>
     ${stopped ? `<input type="text" data-f="note" data-i="0" value="${esc(s.note || '')}" placeholder="Důvod zastavení (nepovinné)" aria-label="Důvod zastavení">` : ''}
@@ -176,6 +176,7 @@ function fillPosOptions() {
   sel.innerHTML = o;
 }
 function drawSheet() {
+  hideSug();
   const p = press(editId);
   const sc = $('dlg').scrollTop;
   $('sheet').innerHTML = `<div class="sh-head"><h3>${esc(p.name)}</h3>
@@ -222,23 +223,51 @@ $('sheet').addEventListener('click', ev => {
     case 'mvgo': return doMove();
   }
 });
+function setProduct(i, v) {
+  const p = press(editId);
+  if (!v) return;
+  if (p.slots[i]) { const old = p.slots[i].p; if (old === v) return; p.slots[i].p = v; commit('přejmenováno ' + old + ' → ' + v); }
+  else {
+    p.slots[i] = { p: v, end: null };
+    if (i > 0) compactQueue(p);
+    commit('zadáno ' + v + ' (' + SLOT_NAMES[i] + ')');
+  }
+}
+/* vlastní výběr z katalogu (datalist v mobilech spolehlivě nefunguje) */
+let sugEl = null;
+function hideSug() { if (sugEl) { sugEl.remove(); sugEl = null; } }
+function showSug(inp) {
+  const q = inp.value.trim().toLowerCase();
+  const items = S.catalog.filter(c => !q || c.toLowerCase().includes(q));
+  if (!sugEl) { sugEl = document.createElement('div'); sugEl.className = 'sug'; sugEl.setAttribute('role', 'listbox'); }
+  sugEl.innerHTML = items.length
+    ? items.map(c => `<button type="button" role="option" data-pick="${esc(c)}">${esc(c)}</button>`).join('')
+    : `<div class="sug-empty">${S.catalog.length ? 'V katalogu nic neodpovídá. Napiš název a potvrď.' : 'Katalog je prázdný. Napiš název a potvrď.'}</div>`;
+  sugEl.dataset.i = inp.dataset.i;
+  if (sugEl.previousElementSibling !== inp) inp.after(sugEl);
+}
+$('sheet').addEventListener('focusin', e => { const t = e.target; if (t.dataset && t.dataset.f === 'p') showSug(t); });
+$('sheet').addEventListener('input', e => { const t = e.target; if (t.dataset && t.dataset.f === 'p') showSug(t); });
+let picking = false, pickedAt = 0, pickedIdx = -1; // prst je na položce seznamu – nepotvrzovat rozepsaný text
+$('sheet').addEventListener('focusout', e => { if (e.target.dataset && e.target.dataset.f === 'p') setTimeout(() => { if (!picking && (!document.activeElement || document.activeElement.dataset.f !== 'p')) hideSug(); }, 150); });
+$('sheet').addEventListener('pointerdown', e => { if (e.target.closest('.sug')) picking = true; });
+$('sheet').addEventListener('mousedown', e => { if (e.target.closest('[data-pick]')) e.preventDefault(); });
+$('sheet').addEventListener('pointercancel', () => { picking = false; });
+$('sheet').addEventListener('click', e => {
+  const b = e.target.closest('[data-pick]');
+  if (!b) { picking = false; return; }
+  const i = +sugEl.dataset.i, v = b.dataset.pick;
+  picking = false; pickedAt = Date.now(); pickedIdx = i; hideSug(); setProduct(i, v);
+});
+$('sheet').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.dataset.f === 'p') { e.preventDefault(); hideSug(); e.target.blur(); } });
 $('sheet').addEventListener('change', ev => {
   const el = ev.target;
   if (el.id === 'mvLis') return fillPosOptions();
   const f = el.dataset.f; if (!f) return;
   const i = +el.dataset.i, p = press(editId);
   if (f === 'p') {
-    const v = el.value.trim();
-    if (!v) return;
-    if (p.slots[i]) { const old = p.slots[i].p; if (old === v) return; p.slots[i].p = v; commit('přejmenováno ' + old + ' → ' + v); }
-    else {
-      p.slots[i] = { p: v, end: null };
-      if (i > 0) compactQueue(p);
-      commit('zadáno ' + v + ' (' + SLOT_NAMES[i] + ')');
-      // jump focus to the end-time field of the new row
-      const idx = p.slots.findIndex(x => x && x.p === v);
-      const inp = $('sheet').querySelector(`[data-f="end"][data-i="${idx}"]`); if (inp) inp.focus();
-    }
+    if (picking || (i === pickedIdx && Date.now() - pickedAt < 800)) return;
+    setProduct(i, el.value.trim());
   } else if (f === 'end' && p.slots[i]) {
     p.slots[i].end = fromLocal(el.value); commit('konec ' + p.slots[i].p + ': ' + fmtEnd(p.slots[i].end));
   } else if (f === 'note' && p.slots[0]) {

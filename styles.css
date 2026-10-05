@@ -101,5 +101,11 @@ input[type=search]{margin-top:10px}
 .qrbox img,.qrbox svg{display:block;width:100%;height:auto;image-rendering:pixelated}
 .cam{width:100%;border-radius:8px;background:#000;aspect-ratio:1;object-fit:cover}
 .preview{border:1px solid var(--line);border-radius:6px;padding:10px;font-size:.92rem}
+.fields{position:relative}
+.sug{grid-column:1/-1;border:1px solid var(--line);border-radius:6px;background:var(--panel);max-height:260px;overflow-y:auto;display:flex;flex-direction:column}
+.sug button{text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:12px;min-height:44px}
+.sug button:last-child{border-bottom:0}
+.sug button:active{background:var(--bg)}
+.sug-empty{padding:12px;color:var(--muted);font-size:.9rem}
 .toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:6px;font-weight:600;z-index:50;max-width:90vw;text-align:center}
 @media (prefers-reduced-motion:no-preference){.tile{transition:transform .12s}.tile:active{transform:scale(.98)}}
