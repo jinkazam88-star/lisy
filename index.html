@@ -13,6 +13,24 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div class="login" id="login" hidden>
+  <div class="lg-card">
+    <div class="lg-brand"><span class="logo lg-logo" data-ic="logo"></span><div><div class="lg-title">Lisy na hale</div><div class="lg-sub">Předávání směny · přihlášení</div></div></div>
+    <div id="lgStep1">
+      <div class="lg-h">Kdo jsi?</div>
+      <div class="lg-names" id="lgNames"></div>
+    </div>
+    <div id="lgStep2" hidden>
+      <button class="lg-back" id="lgBack" data-ic="back">Jiný uživatel</button>
+      <div class="lg-who"><span class="av av-lg" id="lgAv"></span><b id="lgName"></b></div>
+      <div class="lg-h">Zadej PIN</div>
+      <div class="dots" id="lgDots"><i></i><i></i><i></i><i></i></div>
+      <div class="lg-err" id="lgErr" role="alert"></div>
+      <div class="pad" id="lgPad"></div>
+    </div>
+  </div>
+  <div class="lg-foot" id="lgFoot"></div>
+</div>
 <header class="appbar">
   <div class="hrow">
     <div class="brand">
@@ -21,7 +39,7 @@
     </div>
     <div class="hright">
       <div class="clock"><b id="clock" class="mono">--:--</b><span><span id="shiftName"></span> · do <span id="shiftEnd" class="mono"></span></span></div>
-      <button class="themebtn" id="themeBtn" aria-label="Přepnout světlý / tmavý vzhled"></button>
+      <button class="userbtn" id="userBtn" aria-label="Uživatel a nastavení"><span class="av" id="userAv"></span></button>
     </div>
   </div>
   <div class="stats" id="filters" role="group" aria-label="Filtr lisů">
@@ -38,7 +56,7 @@
 
   <section id="v-predani" hidden>
     <h2>Předání směny</h2>
-    <div class="who"><label for="who">Předává / přebírá</label><input type="text" id="who" placeholder="Tvoje jméno" autocomplete="name"></div>
+    <div class="wholine"><span class="av" id="whoAv"></span><span>Předává / přebírá: <b id="whoName"></b></span></div>
     <div class="bigbtns">
       <button class="primary" id="btnGive" data-ic="qr">Předat směnu</button>
       <button class="secondary" id="btnTake" data-ic="scan">Načíst od předchozí směny</button>

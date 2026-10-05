@@ -1,0 +1,48 @@
+{
+ "users": [
+  {
+   "name": "Zdeněk",
+   "pin": "2e429b1a8ec39c55d54baafcbb00785938d161aaa6f0591d88e5685ee0e4b90d"
+  },
+  {
+   "name": "Jaromír",
+   "pin": "868735e1b3646c60336971c9c284dbe2ab13eb98a5ec18b0c574dc397c8d8241"
+  },
+  {
+   "name": "Láďa",
+   "pin": "55da8abcc44ec947cebf670b0f2fab273e935abfee403aea600785ec09e8febe"
+  },
+  {
+   "name": "Lenka",
+   "pin": "65fd51f480b1291bdf0ebc138dc600b64f119aaad076281d12bb909f818e1792"
+  },
+  {
+   "name": "Karel",
+   "pin": "560f4d3057d593cb077002b6e8e5e1215bad234c901676668c1acb545d6505f8"
+  },
+  {
+   "name": "Miloš",
+   "pin": "66bca13fa41094ef47d3216156f036c03db0df0d517ac840c7bc94ca84d20831"
+  },
+  {
+   "name": "Martin",
+   "pin": "1e99a3239d9c62827f3b26726fd6c6a7ad0cdc128cc5a405b161651e4da23c7b"
+  },
+  {
+   "name": "Michal",
+   "pin": "cdd1ac45f8e2c81c09e717adf9b950f9013598cc37754c2372bf1b7b1ecadaec"
+  },
+  {
+   "name": "Vojtěch",
+   "pin": "239bdbb46b2914159357361e81b89cbdc4d88e363d72bf1c6a45cdecf371fdc5"
+  },
+  {
+   "name": "Josef",
+   "pin": "835fdb7781401673c0f5429827f3984a680a3fc5f9f626b59c11d5c828268fcb"
+  },
+  {
+   "name": "Pavel",
+   "pin": "fa50dfd39a7533a2aab560db00369d3a039476436ad96603c96c47f1568f75cf"
+  }
+ ]
+}

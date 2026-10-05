@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '10';
+const VERSION = '11';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -92,6 +92,7 @@ const ICONS = {
   scan: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/>',
   share: '<path d="M12 15V3M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>', save: '<path d="M6 3h12v18l-6-4-6 4z"/>',
   note: '<path d="M5 4h14v11l-5 5H5zM14 20v-5h5M8 9h8M8 13h4"/>',
+  back: '<path d="M15 6l-6 6 6 6"/>', del: '<path d="M21 5H9l-6 7 6 7h12zM12 9l6 6M18 9l-6 6"/>', logout: '<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/>',
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/>', chev: '<path d="M9 6l6 6-6 6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
@@ -109,7 +110,7 @@ function renderHeader() {
   $('clock').textContent = pad(now.getHours()) + ':' + pad(now.getMinutes());
   $('shiftName').textContent = s.name + ' směna';
   $('shiftEnd').textContent = pad(new Date(s.end).getHours()) + ':00';
-  $('ver').textContent = 'verze ' + VERSION;
+  $('ver').textContent = (S.who ? S.who + ' · ' : '') + 'verze ' + VERSION;
   $('srcInfo').textContent = S.from ? 'Převzato od ' + (S.from.who || '?') + ', ' + fmtEnd(S.from.t) : (S.updated ? '' : 'Klepni na lis a zadej výrobek, nebo načti směnu od kolegy v Předání.');
 }
 function renderGrid() {
@@ -165,7 +166,7 @@ function renderHandover() {
   $('log').innerHTML = S.log.slice(0, 20).map(l =>
     `<div class="row simple"><span><b>${esc(l.who || '?')}</b> · ${esc((press(l.id) || {}).name || '')} · ${esc(l.what)}</span><span class="mono" style="font-size:.8rem;color:var(--muted)">${fmtEnd(l.t).replace('dnes ', '')}</span></div>`
   ).join('') || '<p class="hint">Zatím žádné změny.</p>';
-  if (document.activeElement !== $('who')) $('who').value = S.who || '';
+  $('whoName').textContent = S.who || '—'; setAv($('whoAv'), S.who);
 }
 function renderCatalog() {
   $('catCount').textContent = S.catalog.length ? S.catalog.length + ' výrobků' : '';
@@ -599,7 +600,7 @@ function qrParts(kind) {
 let qrTimer = null;
 function openGive(kind) {
   kind = kind === 'cat' ? 'cat' : 'shift';
-  if (kind === 'shift' && !S.who) { $('who').focus(); toast('Nejdřív napiš své jméno'); return; }
+  if (kind === 'shift' && !S.who) { showLogin(); return; }
   if (kind === 'cat' && !S.catalog.length) { toast('Katalog je prázdný'); return; }
   const svgs = qrParts(kind).map(t => { const q = qrcode(0, 'M'); q.addData(t); q.make(); return q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); });
   $('sheet2').innerHTML = `<div class="sh-head"><h3>${kind === 'cat' ? 'Sdílet katalog' : 'Předat směnu'}</h3><button class="x" data-b="close" aria-label="Zavřít">${ic('x')}</button></div>
@@ -745,7 +746,6 @@ $('catForm').addEventListener('submit', e => {
   $('catNew').value = '';
 });
 $('catSearch').addEventListener('input', renderCatalog);
-$('who').addEventListener('change', e => { S.who = e.target.value.trim(); save(); });
 $('btnGive').addEventListener('click', () => openGive('shift'));
 $('btnTake').addEventListener('click', () => openTake('shift'));
 $('btnCatGive').addEventListener('click', () => openGive('cat'));
@@ -756,7 +756,6 @@ const THEMES = { auto: ['auto', 'Vzhled podle telefonu'], light: ['sun', 'Světl
 function applyTheme(t, announce) {
   if (!THEMES[t]) t = 'auto';
   if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
-  $('themeBtn').innerHTML = ic(THEMES[t][0]); $('themeBtn').title = THEMES[t][1];
   const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.querySelector('meta[name="theme-color"]').content = dark ? '#0a0e12' : '#121820';
   try { localStorage.setItem('lisy-theme', t); } catch (e) {}
@@ -764,8 +763,82 @@ function applyTheme(t, announce) {
 }
 let theme = 'auto'; try { theme = localStorage.getItem('lisy-theme') || 'auto'; } catch (e) {}
 applyTheme(theme);
-$('themeBtn').addEventListener('click', () => { theme = { auto: 'light', light: 'dark', dark: 'auto' }[theme] || 'auto'; applyTheme(theme, true); });
+
+/* ============ Přihlášení ============ */
+const SESSION_H = 12; // po kolika hodinách se znovu ptá na PIN
+let USERS = [];
+function avHue(n) { let h = 0; for (const ch of n || '') h = (h * 31 + ch.charCodeAt(0)) % 360; return h; }
+function setAv(el, n) { if (!el) return; el.textContent = (n || '?').slice(0, 1); el.style.setProperty('--h', avHue(n)); }
+async function sha256(t) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }
+async function loadUsers() {
+  try { const r = await fetch('users.json', { cache: 'no-cache' }); const j = await r.json(); USERS = j.users || []; localStorage.setItem('lisy-users', JSON.stringify(USERS)); }
+  catch (e) { try { USERS = JSON.parse(localStorage.getItem('lisy-users')) || []; } catch (e2) { USERS = []; } }
+}
+function getSession() { try { const s = JSON.parse(localStorage.getItem('lisy-session')); if (s && Date.now() - s.t < SESSION_H * H) return s; } catch (e) {} return null; }
+let lgUser = null, lgPin = '';
+function showLogin(step) {
+  $('login').hidden = false; $('lgFoot').textContent = 'verze ' + VERSION;
+  let last = ''; try { last = localStorage.getItem('lisy-last-user') || ''; } catch (e) {}
+  $('lgNames').innerHTML = USERS.length ? USERS.map(u => `<button data-user="${esc(u.name)}" class="${u.name === last ? 'last' : ''}"><span class="av" style="--h:${avHue(u.name)}">${esc(u.name.slice(0, 1))}</span>${esc(u.name)}</button>`).join('')
+    : '<p class="lg-sub">Seznam uživatelů se nepodařilo načíst. Připoj se k internetu a otevři aplikaci znovu.</p>';
+  if (step === 'pin' && lgUser) return pinStep(lgUser);
+  $('lgStep1').hidden = false; $('lgStep2').hidden = true;
+}
+function pinStep(name) {
+  lgUser = name; lgPin = ''; $('lgName').textContent = name; setAv($('lgAv'), name);
+  $('lgStep1').hidden = true; $('lgStep2').hidden = false; $('lgErr').textContent = ''; drawDots();
+}
+function drawDots() { [...$('lgDots').children].forEach((d, i) => d.classList.toggle('on', i < lgPin.length)); }
+async function pinKey(k) {
+  if (k === 'del') lgPin = lgPin.slice(0, -1);
+  else if (lgPin.length < 4) lgPin += k;
+  $('lgErr').textContent = ''; drawDots();
+  if (lgPin.length < 4) return;
+  const u = USERS.find(x => x.name === lgUser), ok = u && u.pin === await sha256('lisy:' + lgUser + ':' + lgPin);
+  if (!ok) {
+    $('lgDots').classList.remove('bad'); void $('lgDots').offsetWidth; $('lgDots').classList.add('bad');
+    $('lgErr').textContent = 'Špatný PIN, zkus to znovu.'; lgPin = ''; setTimeout(drawDots, 350); return;
+  }
+  try { localStorage.setItem('lisy-session', JSON.stringify({ name: lgUser, t: Date.now() })); localStorage.setItem('lisy-last-user', lgUser); } catch (e) {}
+  S.who = lgUser; save(); $('login').hidden = true; setAv($('userAv'), S.who); renderAll(); toast('Přihlášen: ' + S.who);
+}
+$('lgPad').innerHTML = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map(k => k === '' ? '<span></span>'
+  : k === 'del' ? `<button class="fn" data-k="del" aria-label="Smazat číslici">${ic('del')}</button>` : `<button data-k="${k}">${k}</button>`).join('');
+$('lgPad').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) pinKey(b.dataset.k); });
+$('lgNames').addEventListener('click', e => { const b = e.target.closest('[data-user]'); if (b) pinStep(b.dataset.user); });
+$('lgBack').addEventListener('click', () => { lgUser = null; showLogin(); });
+document.addEventListener('keydown', e => { if ($('login').hidden || $('lgStep2').hidden) return; if (/^[0-9]$/.test(e.key)) pinKey(e.key); if (e.key === 'Backspace') pinKey('del'); });
+function logout() {
+  try { localStorage.removeItem('lisy-session'); } catch (e) {}
+  if ($('dlg2').open) closeDlg2(); if ($('dlg').open) $('dlg').close();
+  S.who = ''; save(); lgUser = null; showLogin();
+}
+function openUserMenu() {
+  $('sheet2').onclick = null;
+  const s = getSession();
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>Uživatel</h3><button class="x" data-u="close" aria-label="Zavřít">${ic('x')}</button></div>
+    <div class="me"><span class="av av-lg" style="--h:${avHue(S.who)}">${esc((S.who || '?').slice(0, 1))}</span><div><b>${esc(S.who || '—')}</b><div class="hint" style="margin:0">přihlášen ${s ? fmtEnd(s.t) : ''} · znovu PIN za ${SESSION_H} h</div></div></div>
+    <span class="flbl">Vzhled</span>
+    <div class="seg">${Object.entries(THEMES).map(([k, v]) => `<button data-u="theme" data-t="${k}" aria-pressed="${k === theme}">${ic(v[0])}${{ auto: 'Podle telefonu', light: 'Světlý', dark: 'Tmavý' }[k]}</button>`).join('')}</div>
+    <button class="secondary" data-u="logout">${ic('logout')}Odhlásit</button>
+    <p class="hint" style="margin:0;text-align:center">Lisy na hale · verze ${VERSION}</p>`;
+  $('dlg2').showModal();
+  $('sheet2').onclick = e => {
+    const b = e.target.closest('[data-u]'); if (!b) return;
+    if (b.dataset.u === 'close') closeDlg2();
+    if (b.dataset.u === 'logout') logout();
+    if (b.dataset.u === 'theme') { theme = b.dataset.t; applyTheme(theme); $('sheet2').querySelectorAll('[data-u="theme"]').forEach(x => x.setAttribute('aria-pressed', x.dataset.t === theme)); }
+  };
+}
+$('userBtn').addEventListener('click', openUserMenu);
 document.querySelectorAll('[data-ic]').forEach(el => el.insertAdjacentHTML('afterbegin', ic(el.dataset.ic)));
 renderAll();
+(async () => {
+  await loadUsers();
+  const s = getSession();
+  if (s && USERS.some(u => u.name === s.name)) { S.who = s.name; setAv($('userAv'), S.who); renderAll(); }
+  else { try { lgUser = localStorage.getItem('lisy-last-user'); } catch (e) {} showLogin(lgUser && USERS.some(u => u.name === lgUser) ? 'pin' : undefined); }
+})();
+setInterval(() => { if (!$('login').hidden) return; const s = getSession(); if (!s) { lgUser = S.who; showLogin('pin'); } }, 60000);
 setInterval(() => { if (!$('dlg').open && !$('dlg2').open) { renderHeader(); renderGrid(); renderHandover(); } }, 30000);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
