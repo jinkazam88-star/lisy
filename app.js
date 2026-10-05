@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '8';
+const VERSION = '9';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -90,7 +90,10 @@ const ICONS = {
   qr: '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2v2M18 14h2"/>',
   scan: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/>',
   share: '<path d="M12 15V3M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>', save: '<path d="M6 3h12v18l-6-4-6 4z"/>',
-  grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/>', chev: '<path d="M9 6l6 6-6 6"/>'
+  grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/>', chev: '<path d="M9 6l6 6-6 6"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  auto: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>'
 };
 const ic = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -683,6 +686,20 @@ $('btnTake').addEventListener('click', () => openTake('shift'));
 $('btnCatGive').addEventListener('click', () => openGive('cat'));
 $('btnCatTake').addEventListener('click', () => openTake('cat'));
 
+/* vzhled: auto (podle telefonu) / světlý / tmavý */
+const THEMES = { auto: ['auto', 'Vzhled podle telefonu'], light: ['sun', 'Světlý vzhled'], dark: ['moon', 'Tmavý vzhled'] };
+function applyTheme(t, announce) {
+  if (!THEMES[t]) t = 'auto';
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
+  $('themeBtn').innerHTML = ic(THEMES[t][0]); $('themeBtn').title = THEMES[t][1];
+  const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#0a0e12' : '#121820';
+  try { localStorage.setItem('lisy-theme', t); } catch (e) {}
+  if (announce) toast(THEMES[t][1]);
+}
+let theme = 'auto'; try { theme = localStorage.getItem('lisy-theme') || 'auto'; } catch (e) {}
+applyTheme(theme);
+$('themeBtn').addEventListener('click', () => { theme = { auto: 'light', light: 'dark', dark: 'auto' }[theme] || 'auto'; applyTheme(theme, true); });
 document.querySelectorAll('[data-ic]').forEach(el => el.insertAdjacentHTML('afterbegin', ic(el.dataset.ic)));
 renderAll();
 setInterval(() => { if (!$('dlg').open && !$('dlg2').open) { renderHeader(); renderGrid(); renderHandover(); } }, 30000);
