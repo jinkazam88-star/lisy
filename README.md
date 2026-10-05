@@ -45,6 +45,6 @@ Telefony si novou verzi stáhnou při příštím otevření se signálem. Data 
 ## Soubory
 
 - `index.html`, `styles.css`, `app.js` – aplikace
-- `sw.js`, `manifest.webmanifest`, `icons/` – offline režim a ikona na ploše
-- `vendor/` – knihovny pro QR kódy (qrcode-generator, jsQR) a kompresi (lz-string), MIT licence
-- `fonts/` – písma Barlow (OFL licence)
+- `sw.js`, `manifest.webmanifest`, `` – offline režim a ikona na ploše
+- `` – knihovny pro QR kódy (qrcode-generator, jsQR) a kompresi (lz-string), MIT licence
+- `` – písma Barlow (OFL licence)
