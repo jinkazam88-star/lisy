@@ -130,7 +130,6 @@ function renderHandover() {
   if (document.activeElement !== $('who')) $('who').value = S.who || '';
 }
 function renderCatalog() {
-  $('catCount').textContent = S.catalog.length ? S.catalog.length + ' výrobků' : '';
   const q = ($('catSearch').value || '').toLowerCase();
   $('catalog').innerHTML = S.catalog.map((c, i) => ({ c, i })).filter(x => !q || x.c.toLowerCase().includes(q))
     .map(x => `<div class="row simple"><span>${esc(x.c)}</span><button class="sm del" data-catdel="${x.i}">Odebrat</button></div>`).join('')
@@ -454,45 +453,37 @@ function packState(withCatalog) {
   if (withCatalog) o.c = S.catalog;
   return o;
 }
-const catPack = () => ({ k: S.catalog, w: S.who || '', t: Math.floor(Date.now() / M) });
-const catUnpack = o => ({ kind: 'cat', catalog: o.k || [], who: o.w, t: o.t * M });
 function unpack(o) {
   const presses = o.l.map(([id, name, ...rest]) => ({
     id, name,
     ...(rest[5] ? { idle: { since: (o.t + rest[5][0]) * M, last: rest[5][1], reason: rest[5][2] } } : {}),
     slots: rest.slice(0, 5).map(s => s ? Object.assign({ p: o.n[s[0]], end: s[1] === null ? null : (o.t + s[1]) * M }, s[2] ? { stopped: true } : {}, s[3] ? { note: s[3] } : {}) : null)
   }));
-  return { kind: 'shift', presses, catalog: o.c || [], who: o.w, t: o.t * M };
+  return { presses, catalog: o.c || [], who: o.w, t: o.t * M };
 }
 function decodeText(txt) {
   txt = (txt || '').trim();
-  if (txt.startsWith(PREFIX)) {
-    const o = JSON.parse(LZString.decompressFromBase64(txt.slice(PREFIX.length)));
-    return o.k ? catUnpack(o) : unpack(o);
-  }
+  if (txt.startsWith(PREFIX)) return unpack(JSON.parse(LZString.decompressFromBase64(txt.slice(PREFIX.length))));
   const o = JSON.parse(txt);
   if (o.app === 'lisy-hala') return unpack(o.data);
-  if (o.app === 'lisy-katalog') return catUnpack(o.data);
   throw new Error('neznámý formát');
 }
 function closeDlg2() { stopCam(); $('dlg2').close(); }
 $('dlg2').addEventListener('close', stopCam);
 
 const CHUNK = 420; // znaků na jeden QR kód – menší kód se lépe skenuje
-function qrParts(kind) {
-  const data = LZString.compressToBase64(JSON.stringify(kind === 'cat' ? catPack() : packState(false)));
+function qrParts() {
+  const data = LZString.compressToBase64(JSON.stringify(packState(false)));
   const id = Math.random().toString(36).slice(2, 6), n = Math.ceil(data.length / CHUNK), parts = [];
   for (let k = 0; k < n; k++) parts.push(`${PREFIX}${id}:${k + 1}/${n}:${data.slice(k * CHUNK, (k + 1) * CHUNK)}`);
   return parts;
 }
 let qrTimer = null;
-function openGive(kind) {
-  kind = kind === 'cat' ? 'cat' : 'shift';
-  if (kind === 'shift' && !S.who) { $('who').focus(); toast('Nejdřív napiš své jméno'); return; }
-  if (kind === 'cat' && !S.catalog.length) { toast('Katalog je prázdný'); return; }
-  const svgs = qrParts(kind).map(t => { const q = qrcode(0, 'M'); q.addData(t); q.make(); return q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); });
-  $('sheet2').innerHTML = `<div class="sh-head"><h3>${kind === 'cat' ? 'Sdílet katalog' : 'Předat směnu'}</h3><button class="x" data-b="close" aria-label="Zavřít">×</button></div>
-    <p class="hint" style="margin:0">${kind === 'cat' ? `Katalog má ${S.catalog.length} výrobků. Kolega v aplikaci dá <b>Katalog → Načíst katalog</b>` : 'Nástupce v aplikaci dá <b>Předání → Načíst od předchozí směny</b>'} a namíří telefon na kód.${svgs.length > 1 ? ' Kódy se samy střídají, drž telefon namířený, dokud nenačte všechny.' : ''} Jas displeje dej na maximum.</p>
+function openGive() {
+  if (!S.who) { $('who').focus(); toast('Nejdřív napiš své jméno'); return; }
+  const svgs = qrParts().map(t => { const q = qrcode(0, 'M'); q.addData(t); q.make(); return q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); });
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>Předat směnu</h3><button class="x" data-b="close" aria-label="Zavřít">×</button></div>
+    <p class="hint" style="margin:0">Nástupce v aplikaci dá <b>Předání → Načíst od předchozí směny</b> a namíří telefon na kód.${svgs.length > 1 ? ' Kódy se samy střídají, drž telefon namířený, dokud nenačte všechny.' : ''} Jas displeje dej na maximum.</p>
     <div class="qrbox" id="qrbox"></div>
     ${svgs.length > 1 ? '<p class="hint" style="margin:0;text-align:center" id="qrno"></p>' : ''}
     <button class="secondary" data-b="file">Poslat jako soubor (WhatsApp, e-mail…)</button>`;
@@ -503,15 +494,15 @@ function openGive(kind) {
   $('sheet2').onclick = e => {
     const b = e.target.closest('[data-b]'); if (!b) return;
     if (b.dataset.b === 'close') closeDlg2();
-    if (b.dataset.b === 'file') shareFile(kind);
+    if (b.dataset.b === 'file') shareFile();
   };
 }
-async function shareFile(kind) {
-  const d = new Date(), name = `${kind === 'cat' ? 'katalog' : 'predani'}-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
-  const body = JSON.stringify(kind === 'cat' ? { app: 'lisy-katalog', v: 1, data: catPack() } : { app: 'lisy-hala', v: 1, data: packState(true) });
+async function shareFile() {
+  const d = new Date(), name = `predani-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  const body = JSON.stringify({ app: 'lisy-hala', v: 1, data: packState(true) });
   const file = new File([body], name, { type: 'application/json' });
   try {
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: kind === 'cat' ? 'Katalog výrobků' : 'Předání směny' }); return; }
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Předání směny' }); return; }
   } catch (e) { if (e.name === 'AbortError') return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.append(a); a.click(); a.remove();
   toast('Soubor uložen do Stažených');
@@ -519,8 +510,8 @@ async function shareFile(kind) {
 
 let camStream = null, camTimer = null;
 function stopCam() { if (qrTimer) clearInterval(qrTimer); qrTimer = null; if (camTimer) clearInterval(camTimer); camTimer = null; if (camStream) camStream.getTracks().forEach(t => t.stop()); camStream = null; }
-function openTake(kind) {
-  $('sheet2').innerHTML = `<div class="sh-head"><h3>${kind === 'cat' ? 'Načíst katalog' : 'Načíst směnu'}</h3><button class="x" data-b="close" aria-label="Zavřít">×</button></div>
+function openTake() {
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>Načíst směnu</h3><button class="x" data-b="close" aria-label="Zavřít">×</button></div>
     <button class="primary" data-b="scan">Naskenovat QR kód</button>
     <video class="cam" id="cam" playsinline muted hidden></video>
     <button class="secondary" data-b="file">Otevřít soubor</button>
@@ -571,20 +562,12 @@ async function startScan() {
 }
 $('fileIn').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  if (!$('dlg2').open || !$('takeMsg')) openTake();
+  if (!$('dlg2').open) openTake();
   previewImport(await f.text());
 });
 let pending = null;
 function previewImport(txt) {
-  try { pending = decodeText(txt); } catch (e) { $('takeMsg').innerHTML = '<p class="hint">Tohle není předání ani katalog z aplikace Lisy.</p>'; return; }
-  if (pending.kind === 'cat') {
-    const nw = pending.catalog.filter(c => !S.catalog.includes(c)).length;
-    $('takeMsg').innerHTML = `<div class="preview">Katalog od: <b>${esc(pending.who || '?')}</b>, ${fmtEnd(pending.t)}<br>
-      Výrobků: <b>${pending.catalog.length}</b>, z toho nových pro tebe: <b>${nw}</b></div>
-      <p class="hint">Nové výrobky se přidají k tvému katalogu. Nic se nesmaže.</p>
-      ${nw ? '<button class="primary" data-b="apply">Přidat do katalogu</button>' : '<p class="hint">Všechny výrobky už v katalogu máš.</p>'}`;
-    return;
-  }
+  try { pending = decodeText(txt); } catch (e) { $('takeMsg').innerHTML = '<p class="hint">Tohle není předání z aplikace Lisy.</p>'; return; }
   const used = pending.presses.filter(p => p.slots[0]).length;
   const older = S.updated && pending.t < S.updated;
   $('takeMsg').innerHTML = `<div class="preview">Od: <b>${esc(pending.who || '?')}</b>, ${fmtEnd(pending.t)}<br>
@@ -595,11 +578,6 @@ function previewImport(txt) {
 }
 function applyImport() {
   if (!pending) return;
-  if (pending.kind === 'cat') {
-    const before = S.catalog.length; pending.catalog.forEach(addToCatalog);
-    const n = S.catalog.length - before;
-    pending = null; save(); renderAll(); closeDlg2(); toast('Přidáno ' + n + ' výrobků do katalogu'); return;
-  }
   S.presses = pending.presses;
   pending.catalog.forEach(addToCatalog);
   pending.presses.forEach(p => p.slots.forEach(s => s && addToCatalog(s.p)));
@@ -631,10 +609,8 @@ $('catForm').addEventListener('submit', e => {
 });
 $('catSearch').addEventListener('input', renderCatalog);
 $('who').addEventListener('change', e => { S.who = e.target.value.trim(); save(); });
-$('btnGive').addEventListener('click', () => openGive('shift'));
-$('btnTake').addEventListener('click', () => openTake('shift'));
-$('btnCatGive').addEventListener('click', () => openGive('cat'));
-$('btnCatTake').addEventListener('click', () => openTake('cat'));
+$('btnGive').addEventListener('click', openGive);
+$('btnTake').addEventListener('click', openTake);
 
 renderAll();
 setInterval(() => { if (!$('dlg').open && !$('dlg2').open) { renderHeader(); renderGrid(); renderHandover(); } }, 30000);
