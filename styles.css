@@ -379,3 +379,18 @@ html[data-fs] nav button svg.i{width:24px;height:24px}
 .t-top .right{flex-wrap:wrap;justify-content:flex-end}
 .pill{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 html[data-fs="2"] .pill{font-size:.62rem;padding:3px 6px}
+
+/* ukončit podle plánu */
+.ptag.t-finish{--c:var(--done)}
+.pt-l{display:block;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--done);text-align:center}
+.pi-time{flex-direction:column}
+.tplan.fin{color:var(--done);background:color-mix(in srgb,var(--done) 14%,transparent)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tplan.fin{color:var(--done)}}
+:root[data-theme="dark"] .tplan.fin{color:var(--done)}
+.pe-type{grid-template-columns:1fr 1fr!important}
+.pe .l-fin{display:none}
+.pe[data-type="finish"] .l-fin{display:inline}
+.pe[data-type="finish"] .l-norm{display:none}
+.pe[data-type="finish"] .pe-task{display:none}
+
+.pe:not([data-type="task"]) .opt-task{display:none}

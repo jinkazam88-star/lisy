@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '17';
+const VERSION = '18';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -151,7 +151,8 @@ function renderGrid() {
     return `<button class="tile ${r ? '' : 'empty'}" style="--st:${st.c}" data-open="${p.id}">
       <div class="t-top"><span class="no">${esc(p.name)}</span><span class="right">${openNotes(p.id).length ? `<span class="tnote" title="Poznámky">${ic('note')}${openNotes(p.id).length}</span>` : ''}<span class="pill">${st.t}</span></span></div>
       ${body}
-      ${planNow(p.id).length ? `<div class="tplan">${ic('plan')}<span>${esc(planText(planNow(p.id)[0]))}${planNow(p.id).length > 1 ? ' +' + (planNow(p.id).length - 1) : ''}</span></div>` : ''}
+      ${(() => { const pn = planNow(p.id), fin = finishFor(p.id), list = fin && !pn.includes(fin) ? [fin, ...pn] : pn.sort((a, b) => (b.type === 'finish') - (a.type === 'finish'));
+        return list.length ? `<div class="tplan ${list[0].type === 'finish' ? 'fin' : ''}">${ic(list[0].type === 'finish' ? 'done' : 'plan')}<span>${list[0].type === 'finish' ? 'Ukončit ' + finishLabel(list[0]) : esc(planText(list[0]))}${list.length > 1 ? ' +' + (list.length - 1) : ''}</span></div>` : ''; })()}
       <div class="q">${q.length ? 'Další: <b>' + esc(q[0].p) + '</b>' + (q.length > 1 ? ' +' + (q.length - 1) : '') : 'Pořadí prázdné'}</div>
     </button>`;
   }).join('') || '<p class="hint">Žádný lis neodpovídá filtru.</p>';
@@ -269,13 +270,23 @@ function taskTs(it) {
   d.setHours(h, m, 0, 0); return d.getTime();
 }
 
-const TYPES = { run: 'Nasadit a rozjet', prep: 'Jen připravit', start: 'Rozjet', task: 'Úkol' };
+const TYPES = { run: 'Nasadit a rozjet', prep: 'Jen připravit', start: 'Rozjet', task: 'Úkol', finish: 'Ukončit' };
+function shiftEndTs(date, shift) { const d = dparse(date); if (shift === 'N') { d.setDate(d.getDate() + 1); d.setHours(6, 0, 0, 0); } else d.setHours(shift === 'R' ? 14 : 22, 0, 0, 0); return d.getTime(); }
+const hhmm = ts => { const d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const itemTs = it => it.type === 'finish' ? shiftEndTs(it.date, it.shift) : taskTs(it);
+const finishFor = (lisId, name) => live().filter(x => x.status === 'todo' && x.type === 'finish' && x.lis === lisId && (!x.p || !name || same(x.p, name))).sort((a, b) => skNum(a.date, a.shift) - skNum(b.date, b.shift))[0];
+function finishLabel(it) { const cur = shiftKey(); return 'na konci ' + (it.date === cur.date ? '' : dayLabel(it.date).split(',')[0].toLowerCase() + ' ') + SH[it.shift].toLowerCase() + ' (' + hhmm(shiftEndTs(it.date, it.shift)) + ')'; }
+function planOnEnd(p, name) { live().filter(x => x.status === 'todo' && x.type === 'finish' && x.lis === p.id && (!x.p || same(x.p, name))).forEach(markDone); }
+function applyFinishEnd(it) { // běžící výrobek dostane čas konce podle plánu, pokud žádný nemá
+  const p = press(it.lis), r = p && p.slots[0];
+  if (r && r.state === 'run' && !r.end && (!it.p || same(it.p, r.p))) r.end = shiftEndTs(it.date, it.shift);
+}
 const same = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
 const live = () => S.plan.filter(x => x.status !== 'cancel');
 const itemsFor = (date, shift) => live().filter(x => x.date === date && x.shift === shift);
 const overdue = () => live().filter(x => x.status === 'todo' && skNum(x.date, x.shift) < curNum());
 const planNow = id => live().filter(x => x.status === 'todo' && x.lis === id && skNum(x.date, x.shift) <= curNum());
-const planText = it => it.type === 'task' ? it.text : TYPES[it.type] + ' ' + it.p;
+const planText = it => it.type === 'task' ? it.text : it.type === 'finish' ? 'Ukončit ' + (it.p || 'výrobu') + ' ' + finishLabel(it) : TYPES[it.type] + ' ' + it.p;
 function addPlan(o) { const it = Object.assign({ id: pid(), status: 'todo', by: S.who || '', t: Date.now(), u: Date.now(), lis: 0, p: '', text: '', time: '', note: '' }, o); S.plan.push(it); return it; }
 function markDone(it) { it.status = 'done'; it.doneBy = S.who || ''; it.doneT = Date.now(); it.u = Date.now(); log(it.lis || 0, 'plán splněn: ' + planText(it)); }
 function firstTodo(id, types, name) {
@@ -302,27 +313,28 @@ const parseRunAt = v => v ? { date: v.split('|')[0], shift: v.split('|')[1] } : 
 /* --- zobrazení plánu --- */
 let PV = shiftKey();
 function piHtml(it, opts = {}) {
-  const p = it.lis ? press(it.lis) : null, ts = taskTs(it), now = Date.now();
+  const p = it.lis ? press(it.lis) : null, ts = itemTs(it), now = Date.now();
   let cls = it.status === 'done' ? 'done' : '';
   if (it.status === 'todo' && ts) cls += ts < now ? ' late' : ts - now < 30 * M ? ' soon' : '';
   const tag = `<span class="ptag t-${it.type}">${TYPES[it.type]}</span>`;
-  const main = it.type === 'task' ? esc(it.text) : `<b>${p ? esc(p.name) : 'Lis ?'}</b> · ${esc(it.p)}`;
+  const main = it.type === 'task' ? esc(it.text) : `<b>${p ? esc(p.name) : 'Lis ?'}</b> · ${esc(it.p || (it.type === 'finish' && p && p.slots[0] ? p.slots[0].p : 'výrobek na lise'))}`;
   const meta = [];
   if (it.type === 'task' && p) meta.push(esc(p.name));
   if (it.type === 'prep' && it.runDate) meta.push('rozjet: ' + shLabel(it.runDate, it.runShift));
+  if (it.type === 'finish') meta.push('ukončit na konci směny');
   if (it.note) meta.push(esc(it.note));
   if (opts.showShift) meta.push(shLabel(it.date, it.shift));
   meta.push('zadal ' + esc(it.by || '?'));
   let acts = '';
   if (it.status === 'todo') {
     if (opts.takeOver) acts += `<button class="sm go" data-pl="take" data-id="${it.id}">${ic('down')}Převzít do mé směny</button>`;
-    if (it.lis && it.type !== 'task') acts += `<button class="sm ${opts.takeOver ? '' : 'go'}" data-pl="open" data-id="${it.id}">${ic(it.type === 'prep' ? 'wrench' : 'play')}${it.type === 'run' ? 'Nasadit na lis' : it.type === 'prep' ? 'Připravit na lis' : 'Rozjet na lise'}</button>`;
+    if (it.lis && it.type !== 'task') acts += `<button class="sm ${opts.takeOver ? '' : 'go'}" data-pl="open" data-id="${it.id}">${ic(it.type === 'prep' ? 'wrench' : it.type === 'finish' ? 'done' : 'play')}${it.type === 'run' ? 'Nasadit na lis' : it.type === 'prep' ? 'Připravit na lis' : it.type === 'finish' ? 'Ukončit na lise' : 'Rozjet na lise'}</button>`;
     if (ts) acts += `<button class="sm" data-pl="remind" data-id="${it.id}">${ic('bell')}Připomenout v telefonu</button>`;
     acts += `<button class="sm" data-pl="edit" data-id="${it.id}" aria-label="Upravit">${ic('edit')}</button>`;
   }
   return `<div class="pi ${cls}">
     ${chk(it.status === 'done', `data-pl="${it.status === 'done' ? 'reopen' : 'done'}" data-id="${it.id}"`, it.status === 'done' ? 'Vrátit mezi nesplněné' : 'Označit jako splněné')}
-    <div class="pi-time">${it.time ? `<b class="mono">${it.time}</b>` : ic(it.type === 'task' ? 'note' : 'wrench')}</div>
+    <div class="pi-time">${it.type === 'finish' ? `<span class="pt-l">konec</span><b class="mono">${hhmm(ts)}</b>` : it.time ? `<b class="mono">${it.time}</b>` : ic(it.type === 'task' ? 'note' : 'wrench')}</div>
     <div class="pi-body">
       <div class="pi-top">${tag}${it.status === 'done' ? `<span class="pi-ok">${ic('done')}${esc(it.doneBy || '')} · ${fmtEnd(it.doneT).replace('dnes ', '')}</span>` : ts && ts > now && ts - now < 30 * M ? `<span class="pi-soon">za ${Math.ceil((ts - now) / M)} min</span>` : ''}</div>
       <div class="pi-main">${main}</div>
@@ -378,15 +390,20 @@ function fulfil(it) {
   if (it.type === 'run' && !r) return openEditor({ mode: 'newrun', preset: it.p });
   if (it.type === 'prep' && !r) return openEditor({ mode: 'prep', preset: it.p, run: it.runDate ? it.runDate + '|' + it.runShift : '' });
   if (it.type === 'start' && r && r.state === 'prep' && same(r.p, it.p)) return openEditor({ mode: 'resume' });
+  if (it.type === 'finish' && r && (!it.p || same(r.p, it.p))) {
+    if (r.state === 'end') { doneWithUndo(it); return; }
+    if (r.state === 'run' || r.state === 'stop') return openStateDlg(p, 'end', 'Podle plánu');
+  }
   if ((it.type === 'run' || it.type === 'start') && r && r.state === 'run' && same(r.p, it.p)) { doneWithUndo(it); return; }
   // lis není ve stavu, kdy jde akci rovnou udělat
-  const why = !r ? 'Lis je prázdný, výrobek ' + esc(it.p) + ' na něm není připravený.'
+  const why = it.type === 'finish' ? (!r ? 'Lis je prázdný, není co ukončit.' : `Na lise je teď <b>${esc(r.p)}</b>, ne ${esc(it.p)}.`)
+    : !r ? 'Lis je prázdný, výrobek ' + esc(it.p) + ' na něm není připravený.'
     : `Na lise je teď <b>${esc(r.p)}</b> (${status(p).t.toLowerCase()}). ${r.state === 'run' ? 'Nejdřív ukonči výrobu a sundej nástroj.' : 'Nejdřív sundej nástroj.'}`;
   $('sheet2').onclick = null; ED = null;
   $('sheet2').innerHTML = `<div class="sh-head"><h3>${TYPES[it.type]} · ${esc(p.name)}</h3><button class="x" data-fu="close" aria-label="Zavřít">${ic('x')}</button></div>
-    <div class="preview"><b>${esc(it.p)}</b> nejde teď na ${esc(p.name)} ${it.type === 'prep' ? 'připravit' : 'nasadit'}.<br>${why}</div>
+    <div class="preview"><b>${esc(it.p || 'Výrobu')}</b> nejde teď na ${esc(p.name)} ${it.type === 'prep' ? 'připravit' : it.type === 'finish' ? 'ukončit' : 'nasadit'}.<br>${why}</div>
     <button class="primary" data-fu="open">${ic('grid')}Otevřít ${esc(p.name)}</button>
-    ${r && it.type !== 'start' ? `<button class="secondary" data-fu="queue">${ic('plus')}Dát ${esc(it.p)} do pořadí lisu</button>` : ''}
+    ${r && it.type !== 'start' && it.type !== 'finish' ? `<button class="secondary" data-fu="queue">${ic('plus')}Dát ${esc(it.p)} do pořadí lisu</button>` : ''}
     <button class="secondary" data-fu="done">${ic('done')}Označit splněné bez změny na lise</button>
     <p class="hint" style="margin:0">Poslední možnost použij, jen když se to už udělalo mimo aplikaci.</p>`;
   $('dlg2').showModal();
@@ -408,14 +425,14 @@ function openPlanEditor(it) {
   const days = []; for (let i = -1; i <= 7; i++) days.push(addDays(shiftKey().date, i));
   if (!days.includes(v.date)) days.unshift(v.date);
   $('sheet2').innerHTML = `<div class="sh-head"><h3>${it ? 'Upravit plán' : 'Přidat do plánu'}</h3><button class="x" data-e="close" aria-label="Zavřít">${ic('x')}</button></div>
-    <div class="seg pe-type" id="peType">${['run', 'prep', 'task'].concat(v.type === 'start' ? ['start'] : []).map(t => `<button type="button" data-pt="${t}" aria-pressed="${t === v.type}">${ic({ run: 'play', prep: 'wrench', task: 'note', start: 'play' }[t])}${TYPES[t]}</button>`).join('')}</div>
+    <div class="seg pe-type" id="peType">${['run', 'prep', 'finish', 'task'].concat(v.type === 'start' ? ['start'] : []).map(t => `<button type="button" data-pt="${t}" aria-pressed="${t === v.type}">${ic({ run: 'play', prep: 'wrench', task: 'note', start: 'play', finish: 'done' }[t])}${TYPES[t]}</button>`).join('')}</div>
     <div class="pe" id="peBox" data-type="${v.type}">
       <div class="pe-row">
         <label class="pe-f"><span class="flbl">Den</span><select id="peDate">${days.map(d => `<option value="${d}" ${d === v.date ? 'selected' : ''}>${dayLabel(d)}</option>`).join('')}</select></label>
-        <label class="pe-f"><span class="flbl">Směna</span><select id="peShift">${SH_ORDER.map(s => `<option value="${s}" ${s === v.shift ? 'selected' : ''}>${SH[s]}</option>`).join('')}</select></label>
+        <label class="pe-f"><span class="flbl"><span class="l-norm">Směna</span><span class="l-fin">Ukončit na konci směny</span></span><select id="peShift">${SH_ORDER.map(s => `<option value="${s}" ${s === v.shift ? 'selected' : ''}>${SH[s]}</option>`).join('')}</select></label>
       </div>
-      <label class="pe-f"><span class="flbl">Lis <span class="opt">(nepovinné)</span></span><select id="peLis"><option value="0">— bez lisu —</option>${S.presses.map(p => `<option value="${p.id}" ${p.id === v.lis ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
-      <div class="pe-prod"><span class="flbl">Výrobek</span>
+      <label class="pe-f"><span class="flbl">Lis <span class="opt opt-task">(nepovinné)</span></span><select id="peLis"><option value="0">— bez lisu —</option>${S.presses.map(p => `<option value="${p.id}" ${p.id === v.lis ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+      <div class="pe-prod"><span class="flbl">Výrobek<span class="opt l-fin"> (nepovinné, jinak co zrovna jede)</span></span>
         <input type="text" id="edP" value="${esc(v.p)}" placeholder="Hledej v katalogu nebo napiš nový" autocomplete="off">
         <div class="sug" id="edList"></div>
         <label class="savecat" id="edCatWrap" hidden><input type="checkbox" id="edCat" checked> Uložit nový výrobek do katalogu</label></div>
@@ -434,9 +451,13 @@ $('sheet2').addEventListener('click', e => {
   $('peBox').dataset.type = t.dataset.pt;
   $('peType').querySelectorAll('[data-pt]').forEach(x => x.setAttribute('aria-pressed', x === t));
 });
+$('sheet2').addEventListener('change', e => {
+  if (e.target.id !== 'peLis' || !$('peBox') || $('peBox').dataset.type !== 'finish' || $('edP').value) return;
+  const p = press(+e.target.value), r = p && p.slots[0]; if (r) { $('edP').value = r.p; edFilter(); }
+});
 function savePlan(next) {
   const type = $('peBox').dataset.type, lis = +$('peLis').value, name = $('edP').value.trim(), text = $('peText').value.trim();
-  if ((type === 'run' || type === 'prep' || type === 'start') && !lis) { toast('Vyber lis'); return false; }
+  if ((type === 'run' || type === 'prep' || type === 'start' || type === 'finish') && !lis) { toast('Vyber lis'); return false; }
   if ((type === 'run' || type === 'prep' || type === 'start') && !name) { toast('Vyber nebo napiš výrobek'); return false; }
   if (type === 'task' && !text) { toast('Napiš, co se má udělat'); return false; }
   if (type !== 'task' && !$('edCatWrap').hidden && $('edCat').checked) addToCatalog(name);
@@ -444,8 +465,8 @@ function savePlan(next) {
   const data = { type, date: $('peDate').value, shift: $('peShift').value, lis, p: type === 'task' ? '' : name, text: type === 'task' ? text : '',
     time: type === 'task' ? $('peTime').value : '', note: type === 'task' ? '' : $('peNote').value.trim(),
     runDate: type === 'prep' && run ? run.date : '', runShift: type === 'prep' && run ? run.shift : '' };
-  if (PE) { Object.assign(PE, data, { u: Date.now() }); log(lis, 'plán upraven: ' + planText(PE)); }
-  else { const it = addPlan(data); log(lis, 'do plánu: ' + planText(it) + ' (' + shLabel(it.date, it.shift) + ')'); }
+  if (PE) { Object.assign(PE, data, { u: Date.now() }); log(lis, 'plán upraven: ' + planText(PE)); if (type === 'finish') applyFinishEnd(PE); }
+  else { const it = addPlan(data); log(lis, 'do plánu: ' + planText(it) + ' (' + shLabel(it.date, it.shift) + ')'); if (type === 'finish') applyFinishEnd(it); }
   PV = { date: data.date, shift: data.shift };
   save(); renderAll();
   if (next) { const keep = { date: data.date, shift: data.shift, type }; openPlanEditor(null); $('peDate').value = keep.date; $('peShift').value = keep.shift; $('peBox').dataset.type = keep.type; $('peType').querySelectorAll('[data-pt]').forEach(x => x.setAttribute('aria-pressed', x.dataset.pt === keep.type)); toast('Uloženo, zadej další'); }
@@ -459,7 +480,16 @@ function parsePlanText(txt) {
   txt.split(/\n|[,;](?=\s*(?:lis|l\.)\s*\d)/i).map(s => s.trim()).filter(Boolean).forEach(line => {
     let m = line.match(/^(?:lis|l\.?)\s*(\d{1,3})\s*[-–:.,]?\s*(.+)$/i);
     if (m) {
-      let name = m[2].trim(), type = 'run';
+      let name = m[2].trim(), type = 'run', shift = '';
+      const sm = name.match(/(?:^|\s)(ran+n[íi]|odpoledn[íi]|no[cč]n[íi])(?=\s|$|[,.;])/i);
+      if (sm) shift = /^r/i.test(sm[1]) ? 'R' : /^o/i.test(sm[1]) ? 'O' : 'N';
+      if (/ukon[cč]/i.test(name)) {
+        type = 'finish';
+        name = (' ' + name + ' ').replace(/ukon[cč]it|ukon[cč]en[íi]/ig, ' ').replace(/\s(na|po|do)\s+kon(ci|ec)(?=\s)/ig, ' ').replace(/\skon(ci|ec)(?=\s)/ig, ' ').replace(/\s(ran+n[íi]|odpoledn[íi]|no[cč]n[íi])(?=[\s,.;])/ig, ' ').replace(/\ssm[ěe]n[yau]?(?=[\s,.;])/ig, ' ').replace(/\s+/g, ' ').trim();
+        const lisId = (S.presses.find(p => p.id === +m[1]) || S.presses.find(p => (p.name.match(/\d+/) || [])[0] == +m[1]) || {}).id || 0;
+        out.push({ type, lis: lisId, p: name.replace(/^[-–:,\s]+|[-–:,\s]+$/g, ''), text: '', time: '', shift, raw: line });
+        return;
+      }
       if (/(jen\s+)?(připrav|pripravit|nerozj|nerozjíž|nerozjiz|jen\s+nasad)/i.test(name)) {
         type = 'prep'; name = name.replace(/\(?\s*[-–,]?\s*(jen\s+)?(připravit|pripravit|připravit pro .*|nerozjíždět|nerozjizdet|nerozjíždět|jen\s+nasadit)\s*\)?/ig, '').trim();
       }
@@ -490,7 +520,7 @@ function openPaste() {
     if (k === 'parse') {
       parsed = parsePlanText($('psText').value);
       $('psOut').innerHTML = parsed.length ? `<div class="list">${parsed.map((x, i) => `<label class="ps-row"><input type="checkbox" data-psi="${i}" checked>
-        <span><span class="ptag t-${x.type}">${TYPES[x.type]}</span> ${x.type === 'task' ? (x.time ? '<b>' + x.time + '</b> ' : '') + esc(x.text) : '<b>' + esc((press(x.lis) || { name: 'Lis ?' }).name) + '</b> · ' + esc(x.p)}
+        <span><span class="ptag t-${x.type}">${TYPES[x.type]}</span> ${x.type === 'task' ? (x.time ? '<b>' + x.time + '</b> ' : '') + esc(x.text) : '<b>' + esc((press(x.lis) || { name: 'Lis ?' }).name) + '</b> · ' + esc(x.p || 'co jede') + (x.type === 'finish' ? ' · na konci ' + SH[x.shift || PV.shift].toLowerCase() : '')}
         ${x.type !== 'task' && !x.lis ? '<em class="bad">lis nenalezen</em>' : ''}</span></label>`).join('')}</div>
         <p class="hint">Typ jde po přidání změnit tlačítkem upravit u položky.</p>
         <button class="primary" data-ps="add">${ic('plus')}Přidat do plánu</button>` : '<p class="hint">Nic jsem nerozpoznal.</p>';
@@ -498,7 +528,7 @@ function openPaste() {
     if (k === 'add') {
       let n = 0;
       parsed.forEach((x, i) => { const cb = $('psOut').querySelector(`[data-psi="${i}"]`); if (!cb || !cb.checked) return; if (x.type !== 'task' && !x.lis) return;
-        if (x.p) addToCatalog(x.p); addPlan({ type: x.type, date: PV.date, shift: PV.shift, lis: x.lis, p: x.p, text: x.text, time: x.time }); n++; });
+        if (x.p) addToCatalog(x.p); const it2 = addPlan({ type: x.type, date: PV.date, shift: x.shift || PV.shift, lis: x.lis, p: x.p, text: x.text, time: x.time }); if (x.type === 'finish') applyFinishEnd(it2); n++; });
       log(0, 'plán vložen z textu: ' + n + ' položek'); save(); renderAll(); closeDlg2(); toast('Přidáno ' + n + ' položek');
     }
   };
@@ -508,7 +538,7 @@ function openPaste() {
 function icsDate(ts) { const d = new Date(ts); return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00'; }
 const icsEsc = s => String(s).replace(/\\/g, '\\\\').replace(/[,;]/g, m => '\\' + m).replace(/\n/g, '\\n');
 function openRemind(it) {
-  const ts = taskTs(it); if (!ts) return;
+  const ts = itemTs(it); if (!ts) return;
   const title = planText(it), lis = it.lis && press(it.lis) ? press(it.lis).name : '';
   const desc = (lis ? lis + ' · ' : '') + 'Lisy na hale – ' + shLabel(it.date, it.shift);
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lisy na hale//CZ', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
@@ -539,8 +569,8 @@ function openRemind(it) {
 let ALERTED = {}; try { ALERTED = JSON.parse(localStorage.getItem('lisy-alerted')) || {}; } catch (e) {}
 function checkAlarms() {
   const now = Date.now();
-  live().filter(x => x.status === 'todo' && x.type === 'task' && x.time).forEach(it => {
-    const ts = taskTs(it); if (!ts || ALERTED[it.id + ts] || now < ts - 5 * M || now > ts + 60 * M) return;
+  live().filter(x => x.status === 'todo' && ((x.type === 'task' && x.time) || x.type === 'finish')).forEach(it => {
+    const ts = itemTs(it), lead = it.type === 'finish' ? 30 : 5; if (!ts || ALERTED[it.id + ts] || now < ts - lead * M || now > ts + 60 * M) return;
     ALERTED[it.id + ts] = 1; try { localStorage.setItem('lisy-alerted', JSON.stringify(ALERTED)); } catch (e) {}
     showAlarm(it, ts);
   });
@@ -548,12 +578,12 @@ function checkAlarms() {
 function showAlarm(it, ts) {
   const el = document.createElement('div'); el.className = 'alarm';
   const left = Math.round((ts - Date.now()) / M);
-  el.innerHTML = `<div class="alarm-h">${ic('bell')}<b>${it.time}</b><span>${left > 0 ? 'za ' + left + ' min' : 'teď'}</span></div>
+  el.innerHTML = `<div class="alarm-h">${ic('bell')}<b>${hhmm(ts)}</b><span>${left > 0 ? 'za ' + left + ' min' : 'teď'}</span></div>
     <div class="alarm-t">${esc(planText(it))}</div>${it.lis && press(it.lis) ? `<div class="alarm-m">${esc(press(it.lis).name)}</div>` : ''}
     <div class="acts"><button class="sm" data-al="done">${ic('done')}Označit splněné</button><button class="sm" data-al="later">${ic('clock')}Později (10 min)</button><button class="sm" data-al="close">Zavřít</button></div>`;
   el.onclick = e => {
     const b = e.target.closest('[data-al]'); if (!b) return;
-    if (b.dataset.al === 'done') doneWithUndo(it);
+    if (b.dataset.al === 'done') { if (it.type === 'task') doneWithUndo(it); else { el.remove(); fulfil(it); return; } }
     if (b.dataset.al === 'later') setTimeout(() => { if (it.status === 'todo') showAlarm(it, ts); }, 10 * M);
     el.remove();
   };
@@ -743,6 +773,7 @@ function openEditor(o) {
   const withTime = ['newrun', 'deploy', 'time', 'resume'].includes(o.mode);
   const fixed = (o.mode === 'deploy' || o.mode === 'deployprep') ? p.slots[o.k].p : (o.mode === 'time' || o.mode === 'resume') ? r.p : '';
   const initName = o.mode === 'qedit' ? p.slots[o.k].p : (o.preset || '');
+  const fin = ['newrun', 'deploy', 'resume'].includes(o.mode) ? finishFor(p.id, fixed || initName) : null, finAt = fin ? shiftEndTs(fin.date, fin.shift) : null;
   let mins = '';
   if (o.mode === 'time' && r.end) { const left = Math.round((r.end - Date.now()) / M); if (left > 0) mins = left; }
   const h = mins === '' ? '' : Math.floor(mins / 60), m = mins === '' ? '' : mins % 60;
@@ -762,7 +793,8 @@ function openEditor(o) {
         <label><input type="number" id="edM" inputmode="numeric" min="0" max="59" value="${m}" placeholder="0"> min</label>
       </div>
       <span class="flbl">nebo přesný čas konce</span>
-      <input type="datetime-local" id="edAt" value="${o.mode === 'time' && r.end && mins === '' ? toLocal(r.end) : ''}">
+      <input type="datetime-local" id="edAt" value="${finAt ? toLocal(finAt) : o.mode === 'time' && r.end && mins === '' ? toLocal(r.end) : ''}">
+      ${finAt ? `<p class="hint" style="margin:0">${ic('plan')} Podle plánu ukončit ${esc(finishLabel(fin))}, čas je předvyplněný.</p>` : ''}
       <div class="preview" id="edPrev"></div>` : ''}
     ${withRun ? `<p class="hint" style="margin:0">Nástroj se nasadí, ale výroba se nerozjede. Lis bude ve stavu <b>Připraveno</b>.</p>
       <span class="flbl">Kdy rozjet</span><select id="edRun">${shiftOptions(o.run || '')}</select>
@@ -871,13 +903,13 @@ $('dlg').addEventListener('click', e => { if (e.target === $('dlg')) $('dlg').cl
 
 /* Ukončit / Zastavit s potvrzením */
 const REASONS = { end: ['Zakázka hotová', 'Čeká na zakázku', 'Přestavba nástroje', 'Čeká na materiál'], stop: ['Vada nástroje', 'Porucha lisu', 'Kvalita', 'Čeká na materiál'] };
-function openStateDlg(p, state) {
+function openStateDlg(p, state, preset) {
   const r = p.slots[0];
   $('sheet2').innerHTML = `<div class="sh-head"><h3>${state === 'end' ? 'Ukončit výrobu' : 'Zastavit výrobu'}</h3><button class="x" data-f2="close" aria-label="Zavřít">${ic('x')}</button></div>
     <p style="margin:0">${esc(p.name)}: <b>${esc(r.p)}</b></p>
     <span class="flbl">Důvod (nepovinné)</span>
     <div class="quick">${REASONS[state].map(t => `<button type="button" class="chip" data-f2="r" aria-pressed="false">${t}</button>`).join('')}</div>
-    <input type="text" id="finR" placeholder="Nebo napiš vlastní důvod">
+    <input type="text" id="finR" value="${esc(preset || '')}" placeholder="Nebo napiš vlastní důvod">
     <div class="acts end"><button class="secondary" data-f2="close">Zrušit</button><button class="primary" data-f2="ok">${state === 'end' ? 'Ukončit výrobu' : 'Zastavit výrobu'}</button></div>`;
   $('dlg2').showModal();
   $('sheet2').onclick = e => {
@@ -889,6 +921,7 @@ function openStateDlg(p, state) {
       const note = $('finR').value.trim();
       closeDlg2();
       Object.assign(r, { state, since: Date.now(), note });
+      if (state === 'end') planOnEnd(p, r.p);
       commit((state === 'end' ? 'ukončeno ' : 'zastaveno ') + r.p + (note ? ' (' + note + ')' : ''));
     }
   };
