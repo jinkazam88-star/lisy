@@ -394,3 +394,24 @@ html[data-fs="2"] .pill{font-size:.62rem;padding:3px 6px}
 .pe[data-type="finish"] .pe-task{display:none}
 
 .pe:not([data-type="task"]) .opt-task{display:none}
+
+/* zpětná vazba */
+.userbtn{position:relative}
+.userbtn.has-fb::after{content:attr(data-n);position:absolute;top:-7px;right:-9px;min-width:18px;height:18px;border-radius:9px;background:var(--crit);color:#fff;font-size:.68rem;font-weight:700;display:grid;place-items:center;padding:0 4px;border:2px solid var(--bar)}
+.cnt2.red{background:var(--crit);color:#fff}
+.fbi{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--crit);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.fbi.st-ack{border-left-color:var(--warn)}
+.fbi.st-fixed{border-left-color:var(--ok);opacity:.75}
+.fb-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.fb-st{font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.fbi.st-fixed .fb-st{color:var(--ok)}
+.fb-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.ptag.t-fb-bug{--c:var(--crit)} .ptag.t-fb-idea{--c:var(--done)} .ptag.t-fb-ux{--c:var(--warn)}
+.fb-reply{display:flex;gap:6px;align-items:flex-start;font-size:.9rem;background:var(--panel-2);border-radius:var(--r-sm);padding:8px}
+.fb-reply svg.i{width:16px;height:16px;flex:none;margin-top:2px;color:var(--muted)}
+.fb-rin{display:flex;gap:6px}
+.fb-rin input{flex:1}
+.fb-auto{display:flex;gap:8px;align-items:flex-start;font-size:.85rem;color:var(--muted)}
+.fb-auto svg.i{width:18px;height:18px;flex:none}
+.fb-copy{width:100%;min-height:120px;font-size:.8rem}
+.boot-err .boot-rep{background:transparent;border:1px solid #ffe5e5;color:#ffe5e5}

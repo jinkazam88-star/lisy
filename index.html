@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=18">
+<link rel="stylesheet" href="styles.css?v=19">
 <script>try { var fs = localStorage.getItem('lisy-fs'); if (fs) document.documentElement.setAttribute('data-fs', fs); } catch (e) {}</script>
 </head>
 <body>
@@ -18,6 +18,7 @@
   <b>Aplikace se nenačetla celá.</b>
   <span>Nejspíš se zrovna nahrává nová verze. Zkus to znovu.</span>
   <button id="bootBtn">Načíst znovu</button>
+  <button id="bootRep" class="boot-rep" onclick="try{openReport('Chyba načtení')}catch(e){}">Nahlásit problém</button>
 </div>
 <script>
 window.addEventListener('error', function () { var e = document.getElementById('bootErr'); if (e) e.hidden = false; });
@@ -152,9 +153,9 @@ document.addEventListener('click', function (ev) {
 <datalist id="products"></datalist>
 <input type="file" id="fileIn" accept=".json,application/json" hidden>
 
-<script src="qrcode.js?v=18"></script>
-<script src="lz-string.min.js?v=18"></script>
-<script src="jsQR.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="qrcode.js?v=19"></script>
+<script src="lz-string.min.js?v=19"></script>
+<script src="jsQR.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

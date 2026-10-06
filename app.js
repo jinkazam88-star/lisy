@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '18';
+const VERSION = '19';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -9,13 +9,14 @@ const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4
 function emptyState() {
   const presses = [];
   for (let i = 1; i <= PRESS_COUNT; i++) presses.push({ id: i, name: 'Lis ' + String(i).padStart(2, '0'), slots: [null, null, null, null, null] });
-  return { v: 1, presses, catalog: [], log: [], notes: [], plan: [], who: '', updated: 0, from: null };
+  return { v: 1, presses, catalog: [], log: [], notes: [], plan: [], fb: [], who: '', updated: 0, from: null };
 }
 let S;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
 if (!S || !Array.isArray(S.presses)) S = emptyState();
 if (!Array.isArray(S.notes)) S.notes = [];
 if (!Array.isArray(S.plan)) S.plan = [];
+if (!Array.isArray(S.fb)) S.fb = [];
 // převod dat ze starších verzí
 S.presses.forEach(p => {
   p.slots = p.slots.map((x, k) => { if (!x) return null; if (k > 0) return { p: x.p }; if (!x.state) { x.state = x.stopped ? 'stop' : 'run'; delete x.stopped; } delete x.dur; return x; });
@@ -241,7 +242,7 @@ function openNoteDlg(p) {
   };
 }
 
-function renderAll() { renderHeader(); renderGrid(); renderHandover(); renderCatalog(); renderNotes(); renderPlan(); if ($('dlg').open) drawSheet(); }
+function renderAll() { if (typeof fbBadge === 'function' && USERS) try { fbBadge(); } catch (e) {} renderHeader(); renderGrid(); renderHandover(); renderCatalog(); renderNotes(); renderPlan(); if ($('dlg').open) drawSheet(); }
 
 /* ============ Plán směn ============ */
 const SH = { R: 'Ranní', O: 'Odpolední', N: 'Noční' }, SH_ORDER = ['R', 'O', 'N'], SH_START = { R: 6, O: 14, N: 22 };
@@ -950,19 +951,20 @@ function packState(withCatalog) {
   const o = { t: t0, w: S.who || '', n: names, l };
   if (withCatalog) o.c = S.catalog;
   o.pl = packPlan(rel);
+  o.fb = packFb(rel);
   o.nt = S.notes.filter(n => !n.done || Date.now() - n.doneT < 48 * H).slice(-60).map(n => [n.id, n.lis, n.text, n.who, rel(n.t), n.done ? 1 : 0, n.doneBy || '', rel(n.doneT)]);
   return o;
 }
 const PST = ['todo', 'done', 'cancel'];
 function packPlan(rel) {
-  return S.plan.filter(x => x.status === 'todo' || Date.now() - (x.u || 0) < 3 * 24 * H).map(x => [x.id, x.date, x.shift, x.type, x.lis, x.p, x.text, x.time, x.runDate || '', x.runShift || '', PST.indexOf(x.status), x.doneBy || '', rel(x.doneT), x.by || '', rel(x.u), x.note || '', rel(x.t)]);
+  return S.plan.filter(x => x.status === 'todo' || Date.now() - (x.u || 0) < 3 * 24 * H).map(x => [x.id, x.date, x.shift, x.type, x.lis, x.p, x.text, x.time, x.runDate || '', x.runShift || '', PST.indexOf(x.status), x.doneBy || '', rel(x.doneT), x.by || '', Math.round((x.u || 0) / 1000), x.note || '', rel(x.t)]);
 }
 function unpackPlan(a, abs) {
-  return (a || []).map(x => ({ id: x[0], date: x[1], shift: x[2], type: x[3], lis: x[4], p: x[5], text: x[6], time: x[7], runDate: x[8], runShift: x[9], status: PST[x[10]] || 'todo', doneBy: x[11], doneT: abs(x[12]), by: x[13], u: abs(x[14]), note: x[15] || '', t: abs(x[16]) }));
+  return (a || []).map(x => ({ id: x[0], date: x[1], shift: x[2], type: x[3], lis: x[4], p: x[5], text: x[6], time: x[7], runDate: x[8], runShift: x[9], status: PST[x[10]] || 'todo', doneBy: x[11], doneT: abs(x[12]), by: x[13], u: x[14] > 1e9 ? x[14] * 1000 : abs(x[14]), note: x[15] || '', t: abs(x[16]) }));
 }
 function mergePlan(items) {
   let n = 0;
-  (items || []).forEach(it => { const i = S.plan.findIndex(x => x.id === it.id); if (i < 0) { S.plan.push(it); n++; } else if ((it.u || 0) > (S.plan[i].u || 0)) S.plan[i] = it; });
+  (items || []).forEach(it => { const i = S.plan.findIndex(x => x.id === it.id); if (i < 0) { S.plan.push(it); n++; } else if ((it.u || 0) > (S.plan[i].u || 0) + 999) S.plan[i] = it; });
   return n;
 }
 const planPack = () => { const t0 = Math.floor(Date.now() / M); return { pp: 1, w: S.who || '', t: t0, pl: packPlan(t => t ? Math.round(t / M) - t0 : null) }; };
@@ -978,13 +980,13 @@ function unpack(o) {
       : Object.assign({ p: o.n[s[0]], end: abs(s[1]), state: ['run', 'stop', 'end', 'prep'][s[2]] || 'run', note: s[3] || '', since: abs(s[4]) }, s[5] ? { runAt: parseRunAt(s[5]) } : {}))
   }));
   const notes = (o.nt || []).map(a => ({ id: a[0], lis: a[1], text: a[2], who: a[3], t: abs(a[4]), done: !!a[5], doneBy: a[6], doneT: abs(a[7]) }));
-  return { kind: 'shift', presses, catalog: o.c || [], notes, plan: unpackPlan(o.pl, abs), who: o.w, t: o.t * M };
+  return { kind: 'shift', presses, catalog: o.c || [], notes, plan: unpackPlan(o.pl, abs), fb: unpackFb(o.fb, abs), who: o.w, t: o.t * M };
 }
 async function decodeText(txt) {
   txt = (txt || '').trim();
   if (txt.startsWith('L2:')) {
     const o = JSON.parse(await inflate(b45dec(txt.slice(3))));
-    return o.k ? catUnpack(o) : o.pp ? planUnpack(o) : unpack(o);
+    return o.k ? catUnpack(o) : o.pp ? planUnpack(o) : o.fbo ? fbUnpack(o) : unpack(o);
   }
   if (txt.startsWith(PREFIX)) {
     const o = JSON.parse(LZString.decompressFromBase64(txt.slice(PREFIX.length)));
@@ -994,6 +996,7 @@ async function decodeText(txt) {
   if (o.app === 'lisy-hala') return unpack(o.data);
   if (o.app === 'lisy-katalog') return catUnpack(o.data);
   if (o.app === 'lisy-plan') return planUnpack(o.data);
+  if (o.app === 'lisy-fb') return fbUnpack(o.data);
   throw new Error('neznámý formát');
 }
 function closeDlg2() { stopCam(); $('dlg2').close(); }
@@ -1025,7 +1028,7 @@ function b45dec(s) {
 }
 const deflate = async str => new Uint8Array(await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
 const inflate = async u8 => await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
-const payloadFor = kind => kind === 'cat' ? catPack() : kind === 'plan' ? planPack() : packState(false);
+const payloadFor = kind => kind === 'cat' ? catPack() : kind === 'plan' ? planPack() : kind === 'fb' ? fbPack() : packState(false);
 async function qrParts(kind) {
   const json = JSON.stringify(payloadFor(kind));
   if (!HAS_CS) { // starší telefon: původní formát
@@ -1076,11 +1079,11 @@ async function openGive(kind) {
   };
 }
 async function shareFile(kind) {
-  const d = new Date(), name = `${kind === 'cat' ? 'katalog' : kind === 'plan' ? 'plan' : 'predani'}-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
-  const body = JSON.stringify(kind === 'cat' ? { app: 'lisy-katalog', v: 1, data: catPack() } : kind === 'plan' ? { app: 'lisy-plan', v: 1, data: planPack() } : { app: 'lisy-hala', v: 1, data: packState(true) });
+  const d = new Date(), name = `${kind === 'cat' ? 'katalog' : kind === 'plan' ? 'plan' : kind === 'fb' ? 'hlaseni' : 'predani'}-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  const body = JSON.stringify(kind === 'fb' ? { app: 'lisy-fb', v: 1, data: fbPack() } : kind === 'cat' ? { app: 'lisy-katalog', v: 1, data: catPack() } : kind === 'plan' ? { app: 'lisy-plan', v: 1, data: planPack() } : { app: 'lisy-hala', v: 1, data: packState(true) });
   const file = new File([body], name, { type: 'application/json' });
   try {
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: kind === 'cat' ? 'Katalog výrobků' : kind === 'plan' ? 'Plán směn' : 'Předání směny' }); return; }
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: kind === 'fb' ? 'Hlášení problémů' : kind === 'cat' ? 'Katalog výrobků' : kind === 'plan' ? 'Plán směn' : 'Předání směny' }); return; }
   } catch (e) { if (e.name === 'AbortError') return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.append(a); a.click(); a.remove();
   toast('Soubor uložen do Stažených');
@@ -1089,7 +1092,7 @@ async function shareFile(kind) {
 let camStream = null, camTimer = null;
 function stopCam() { if (qrTimer) clearInterval(qrTimer); qrTimer = null; if (camTimer) clearInterval(camTimer); camTimer = null; if (camStream) camStream.getTracks().forEach(t => t.stop()); camStream = null; }
 function openTake(kind) {
-  $('sheet2').innerHTML = `<div class="sh-head"><h3>${kind === 'cat' ? 'Načíst katalog' : kind === 'plan' ? 'Načíst plán' : 'Načíst směnu'}</h3><button class="x" data-b="close" aria-label="Zavřít">${ic('x')}</button></div>
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>${kind === 'fb' ? 'Načíst hlášení' : kind === 'cat' ? 'Načíst katalog' : kind === 'plan' ? 'Načíst plán' : 'Načíst směnu'}</h3><button class="x" data-b="close" aria-label="Zavřít">${ic('x')}</button></div>
     <button class="primary" data-b="scan">Naskenovat QR kód</button>
     <video class="cam" id="cam" playsinline muted hidden></video>
     <button class="secondary" data-b="file">Otevřít soubor</button>
@@ -1147,6 +1150,11 @@ $('fileIn').addEventListener('change', async e => {
 let pending = null;
 async function previewImport(txt) {
   try { pending = await decodeText(txt); } catch (e) { $('takeMsg').innerHTML = '<p class="hint">Tohle není předání ani katalog z aplikace Lisy.</p>'; return; }
+  if (pending.kind === 'fb') {
+    const nw = pending.fb.filter(x => !S.fb.some(y => y.id === x.id)).length;
+    $('takeMsg').innerHTML = `<div class="preview">Hlášení od: <b>${esc(pending.who || '?')}</b>, ${fmtEnd(pending.t)}<br>Hlášení: <b>${pending.fb.length}</b>, nových: <b>${nw}</b></div><button class="primary" data-b="apply">Načíst hlášení</button>`;
+    return;
+  }
   if (pending.kind === 'plan') {
     const nw = pending.plan.filter(x => !S.plan.some(y => y.id === x.id)).length, todo = pending.plan.filter(x => x.status === 'todo').length;
     $('takeMsg').innerHTML = `<div class="preview">Plán od: <b>${esc(pending.who || '?')}</b>, ${fmtEnd(pending.t)}<br>Položek: <b>${pending.plan.length}</b> (nesplněných ${todo}), nových pro tebe: <b>${nw}</b></div>
@@ -1164,13 +1172,14 @@ async function previewImport(txt) {
   const used = pending.presses.filter(p => p.slots[0]).length;
   const older = S.updated && pending.t < S.updated;
   $('takeMsg').innerHTML = `<div class="preview">Od: <b>${esc(pending.who || '?')}</b>, ${fmtEnd(pending.t)}<br>
-    Obsazených lisů: <b>${used}</b> z ${pending.presses.length}${pending.plan && pending.plan.filter(x => x.status === 'todo').length ? `<br>Nesplněné položky plánu: <b>${pending.plan.filter(x => x.status === 'todo').length}</b>` : ''}${pending.notes && pending.notes.filter(n => !n.done).length ? `<br>Otevřené poznámky: <b>${pending.notes.filter(n => !n.done).length}</b>` : ''}${pending.catalog.length ? `<br>Katalog: ${pending.catalog.length} výrobků (doplní se k tvému)` : ''}
+    Obsazených lisů: <b>${used}</b> z ${pending.presses.length}${pending.plan && pending.plan.filter(x => x.status === 'todo').length ? `<br>Nesplněné položky plánu: <b>${pending.plan.filter(x => x.status === 'todo').length}</b>` : ''}${pending.notes && pending.notes.filter(n => !n.done).length ? `<br>Otevřené poznámky: <b>${pending.notes.filter(n => !n.done).length}</b>` : ''}${pending.catalog.length ? `<br>Katalog: ${pending.catalog.length} výrobků (doplní se k tvému)` : ''}${pending.fb && pending.fb.length ? `<br>Hlášení problémů: <b>${pending.fb.length}</b>` : ''}
     ${older ? '<br><b style="color:var(--crit)">Pozor: tvoje data v telefonu jsou novější než tohle předání.</b>' : ''}</div>
     <p class="hint">Stav lisů v tomto telefonu se nahradí předaným stavem.</p>
     <button class="primary" data-b="apply">Převzít směnu</button>`;
 }
 function applyImport() {
   if (!pending) return;
+  if (pending.kind === 'fb') { const n = mergeFb(pending.fb); pending = null; save(); fbBadge(); closeDlg2(); toast('Načteno, nových hlášení: ' + n); return; }
   if (pending.kind === 'plan') { const n = mergePlan(pending.plan); pending.plan.forEach(x => x.p && addToCatalog(x.p)); pending = null; save(); renderAll(); closeDlg2(); toast('Plán načten, nových položek: ' + n); return; }
   if (pending.kind === 'cat') {
     const before = S.catalog.length; pending.catalog.forEach(addToCatalog);
@@ -1179,6 +1188,7 @@ function applyImport() {
   }
   S.presses = pending.presses;
   mergePlan(pending.plan);
+  mergeFb(pending.fb);
   (pending.notes || []).forEach(n => { const i = S.notes.findIndex(x => x.id === n.id); if (i < 0) S.notes.push(n); else S.notes[i] = n; });
   pending.catalog.forEach(addToCatalog);
   pending.presses.forEach(p => p.slots.forEach(s => s && addToCatalog(s.p)));
@@ -1252,6 +1262,121 @@ function applyTheme(t, announce) {
 let theme = 'auto'; try { theme = localStorage.getItem('lisy-theme') || 'auto'; } catch (e) {}
 applyTheme(theme);
 
+/* ============ Zpětná vazba (hlášení problémů a nápadů) ============ */
+const FBT = { bug: 'Chyba', idea: 'Nápad', ux: 'Nepřehledné' };
+const FBS = { new: 'Nové', ack: 'Převzato', fixed: 'Opraveno' };
+const isAdmin = () => !!(USERS.find(u => u.name === S.who) || {}).admin;
+const adminName = () => (USERS.find(u => u.admin) || { name: 'správce' }).name;
+function curScreen() {
+  const v = document.querySelector('nav [aria-current="page"]'), d = [...document.querySelectorAll('dialog')].reverse().find(x => x.open);
+  const h = d && d.querySelector('h3'); return (v ? v.textContent.replace(/\d+/g, '').trim() : '') + (h ? ' › ' + h.textContent.trim() : '');
+}
+function phoneInfo() {
+  const ua = navigator.userAgent, m = ua.match(/Android [\d.]+[^;)]*;\s*([^;)]+)/) || ua.match(/(iPhone|iPad)[^;)]*/);
+  const os = (ua.match(/Android [\d.]+|iPhone OS [\d_]+|CPU OS [\d_]+/) || [''])[0].replace(/_/g, '.');
+  return [m ? m[1] || m[0] : '', os, (ua.match(/(Chrome|Firefox|Safari|SamsungBrowser)\/[\d.]+/) || [''])[0]].filter(Boolean).join(' · ') + ' · ' + innerWidth + '×' + innerHeight;
+}
+const fbOpen = () => S.fb.filter(x => x.status !== 'fixed');
+function fbBadge() {
+  const n = S.fb.filter(x => x.status === 'new').length;
+  $('userBtn').classList.toggle('has-fb', isAdmin() && n > 0); $('userBtn').dataset.n = n;
+}
+function openReport(screen) {
+  ED = null; $('sheet2').onclick = null;
+  const where = screen || curScreen();
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>Nahlásit problém</h3><button class="x" data-fb="close" aria-label="Zavřít">${ic('x')}</button></div>
+    <p class="hint" style="margin:0">Hlášení se předává se směnou, dokud nedojde k ${esc(adminName())}. Uvidí ho všichni.</p>
+    <div class="seg" id="fbType">${Object.entries(FBT).map(([k, v], i) => `<button type="button" data-fbt="${k}" aria-pressed="${i === 0}">${ic({ bug: 'bell', idea: 'plus', ux: 'grid' }[k])}${v}</button>`).join('')}</div>
+    <span class="flbl">Co se stalo nebo co by pomohlo</span>
+    <textarea id="fbText" rows="5" placeholder="Např. po klepnutí na Rozjet se nic nestalo, nebo: chtělo by to…"></textarea>
+    <div class="preview fb-auto">${ic('note')}<span>Automaticky se připojí: ${esc(S.who || '?')}, čas, verze ${VERSION}, telefon a obrazovka „${esc(where || '—')}“.</span></div>
+    <div class="acts end"><button class="secondary" data-fb="close">Zrušit</button><button class="primary" data-fb="send">Odeslat hlášení</button></div>`;
+  $('dlg2').showModal(); setTimeout(() => $('fbText').focus(), 60);
+  $('sheet2').onclick = e => {
+    const t = e.target.closest('[data-fbt]');
+    if (t) { $('fbType').querySelectorAll('[data-fbt]').forEach(x => x.setAttribute('aria-pressed', x === t)); return; }
+    const b = e.target.closest('[data-fb]'); if (!b) return;
+    if (b.dataset.fb === 'close') return closeDlg2();
+    const text = $('fbText').value.trim(); if (!text) { toast('Napiš, co se stalo'); return; }
+    const type = $('fbType').querySelector('[aria-pressed="true"]').dataset.fbt;
+    S.fb.push({ id: pid(), type, text, who: S.who || '', t: Date.now(), u: Date.now(), ver: VERSION, phone: phoneInfo(), screen: where, status: 'new' });
+    save(); fbBadge(); closeDlg2(); toast('Díky, hlášení uloženo. Předá se se směnou.');
+  };
+}
+function fbHtml(x) {
+  const admin = isAdmin();
+  return `<div class="fbi st-${x.status}">
+    <div class="fb-top"><span class="ptag t-fb-${x.type}">${FBT[x.type]}</span><span class="fb-st">${FBS[x.status]}${x.status === 'fixed' && x.fixedVer ? ' ve verzi ' + esc(x.fixedVer) : ''}</span></div>
+    <div class="fb-text">${esc(x.text)}</div>
+    <div class="pi-meta">${esc(x.who || '?')} · ${fmtEnd(x.t)} · verze ${esc(x.ver)}${x.screen ? ' · ' + esc(x.screen) : ''}</div>
+    ${admin ? `<div class="pi-meta">${esc(x.phone || '')}</div>` : ''}
+    ${x.reply ? `<div class="fb-reply">${ic('swap')}<span><b>${esc(x.by || adminName())}:</b> ${esc(x.reply)}</span></div>` : ''}
+    ${admin ? `<div class="acts">
+      ${x.status === 'new' ? `<button class="sm" data-fba="ack" data-id="${x.id}">${ic('done')}Převzato</button>` : ''}
+      ${x.status !== 'fixed' ? `<button class="sm go" data-fba="fixed" data-id="${x.id}">${ic('done')}Opraveno ve verzi ${VERSION}</button>` : `<button class="sm" data-fba="reopen" data-id="${x.id}">Znovu otevřít</button>`}
+      <button class="sm" data-fba="reply" data-id="${x.id}">${ic('note')}Odpovědět</button>
+    </div>` : ''}
+  </div>`;
+}
+function openFeedback() {
+  ED = null; $('sheet2').onclick = null;
+  const admin = isAdmin(), list = S.fb.slice().sort((a, b) => (a.status === 'fixed') - (b.status === 'fixed') || b.t - a.t);
+  const nNew = S.fb.filter(x => x.status === 'new').length;
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>Zpětná vazba</h3><button class="x" data-fbm="close" aria-label="Zavřít">${ic('x')}</button></div>
+    <button class="primary" data-fbm="new">${ic('plus')}Nahlásit problém nebo nápad</button>
+    ${admin ? `<div class="bigbtns two" style="margin:0">
+      <button class="secondary" data-fbm="copy">${ic('list')}Zkopírovat</button>
+      <button class="secondary" data-fbm="load">${ic('scan')}Načíst soubor</button></div>
+      <p class="hint" style="margin:0">Jsi správce. Nových hlášení: <b>${nNew}</b>. „Zkopírovat“ zkopíruje všechna nevyřešená jako text pro úpravu aplikace.</p>`
+      : `<button class="secondary" data-fbm="send">${ic('share')}Poslat hlášení ${esc(adminName())} hned (WhatsApp…)</button>`}
+    <div class="list" style="margin:0">${list.map(fbHtml).join('') || '<p class="hint">Zatím žádná hlášení.</p>'}</div>`;
+  $('dlg2').showModal();
+  $('sheet2').onclick = async e => {
+    const a = e.target.closest('[data-fba]');
+    if (a) {
+      const x = S.fb.find(y => y.id === a.dataset.id); if (!x) return;
+      const k = a.dataset.fba;
+      if (k === 'ack') x.status = 'ack';
+      if (k === 'fixed') { x.status = 'fixed'; x.fixedVer = VERSION; }
+      if (k === 'reopen') x.status = 'ack';
+      if (k === 'reply') {
+        const box = a.closest('.fbi'); if (box.querySelector('.fb-rin')) return;
+        box.insertAdjacentHTML('beforeend', `<div class="fb-rin"><input type="text" placeholder="Odpověď pro všechny" value="${esc(x.reply || '')}"><button class="sm go" data-fba="rsave" data-id="${x.id}">Uložit</button></div>`);
+        box.querySelector('.fb-rin input').focus(); return;
+      }
+      if (k === 'rsave') { x.reply = a.closest('.fb-rin').querySelector('input').value.trim(); }
+      x.by = S.who; x.u = Date.now(); save(); fbBadge(); openFeedback(); return;
+    }
+    const b = e.target.closest('[data-fbm]'); if (!b) return;
+    const k = b.dataset.fbm;
+    if (k === 'close') return closeDlg2();
+    if (k === 'new') return openReport('Zpětná vazba');
+    if (k === 'send') return shareFile('fb');
+    if (k === 'load') { closeDlg2(); openTake('fb'); $('fileIn').click(); return; }
+    if (k === 'copy') {
+      const txt = fbOpen().map((x, i) => `${i + 1}. [${FBT[x.type]}] ${x.text}\n   (${x.who}, ${fmtEnd(x.t)}, verze ${x.ver}, obrazovka: ${x.screen || '—'}, telefon: ${x.phone || '—'})`).join('\n\n') || 'Žádná nevyřešená hlášení.';
+      try { await navigator.clipboard.writeText(txt); toast('Zkopírováno, vlož to do chatu'); }
+      catch (err) { const t = document.createElement('textarea'); t.value = txt; t.className = 'fb-copy'; b.after(t); t.select(); toast('Označ text a zkopíruj ho'); }
+    }
+  };
+}
+const FBF = ['bug', 'idea', 'ux'], FBSF = ['new', 'ack', 'fixed'];
+function packFb(rel) {
+  return S.fb.filter(x => x.status !== 'fixed' || Date.now() - (x.u || 0) < 5 * 24 * H)
+    .map(x => [x.id, FBF.indexOf(x.type), x.text, x.who, rel(x.t), Math.round((x.u || 0) / 1000), x.ver, x.phone || '', x.screen || '', FBSF.indexOf(x.status), x.fixedVer || '', x.by || '', x.reply || '']);
+}
+function unpackFb(a, abs) {
+  return (a || []).map(x => ({ id: x[0], type: FBF[x[1]] || 'bug', text: x[2], who: x[3], t: abs(x[4]), u: (x[5] || 0) * 1000, ver: x[6], phone: x[7], screen: x[8], status: FBSF[x[9]] || 'new', fixedVer: x[10], by: x[11], reply: x[12] }));
+}
+function mergeFb(items) {
+  let n = 0;
+  const rk = s => FBSF.indexOf(s);
+  (items || []).forEach(it => { const i = S.fb.findIndex(x => x.id === it.id); if (i < 0) { S.fb.push(it); n++; } else if ((it.u || 0) > (S.fb[i].u || 0) + 999 || rk(it.status) > rk(S.fb[i].status) || (it.reply && !S.fb[i].reply)) S.fb[i] = it; });
+  return n;
+}
+const fbPack = () => { const t0 = Math.floor(Date.now() / M); return { fbo: 1, w: S.who || '', t: t0, fb: packFb(t => t ? Math.round(t / M) - t0 : null) }; };
+const fbUnpack = o => ({ kind: 'fb', fb: unpackFb(o.fb, v => v === null || v === undefined ? null : (o.t + v) * M), who: o.w, t: o.t * M });
+
 /* ============ Přihlášení ============ */
 const SESSION_H = 12; // po kolika hodinách se znovu ptá na PIN
 let USERS = [];
@@ -1288,7 +1413,7 @@ async function pinKey(k) {
     $('lgErr').textContent = 'Špatný PIN, zkus to znovu.'; lgPin = ''; setTimeout(drawDots, 350); return;
   }
   try { localStorage.setItem('lisy-session', JSON.stringify({ name: lgUser, t: Date.now() })); localStorage.setItem('lisy-last-user', lgUser); } catch (e) {}
-  S.who = lgUser; save(); $('login').hidden = true; setAv($('userAv'), S.who); renderAll(); toast('Přihlášen: ' + S.who);
+  S.who = lgUser; save(); $('login').hidden = true; setAv($('userAv'), S.who); fbBadge(); renderAll(); toast('Přihlášen: ' + S.who);
 }
 $('lgPad').innerHTML = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map(k => k === '' ? '<span></span>'
   : k === 'del' ? `<button class="fn" data-k="del" aria-label="Smazat číslici">${ic('del')}</button>` : `<button data-k="${k}">${k}</button>`).join('');
@@ -1312,7 +1437,9 @@ function setFs(n) {
 }
 setFs(fsLevel);
 $('lgFs').addEventListener('click', () => setFs(fsLevel % 3 + 1));
+let MENU_FROM = '';
 function openUserMenu() {
+  MENU_FROM = curScreen();
   $('sheet2').onclick = null;
   const s = getSession();
   $('sheet2').innerHTML = `<div class="sh-head"><h3>Uživatel</h3><button class="x" data-u="close" aria-label="Zavřít">${ic('x')}</button></div>
@@ -1321,6 +1448,11 @@ function openUserMenu() {
     <div class="seg">${Object.entries(THEMES).map(([k, v]) => `<button data-u="theme" data-t="${k}" aria-pressed="${k === theme}">${ic(v[0])}${{ auto: 'Podle telefonu', light: 'Světlý', dark: 'Tmavý' }[k]}</button>`).join('')}</div>
     <span class="flbl">Velikost písma</span>
     <div class="seg fsseg">${FS.map((x, i) => `<button data-u="fs" data-fs="${i + 1}" class="s${i + 1}" aria-pressed="${i + 1 === fsLevel}">Aa<span style="font-weight:600;font-size:.8rem">${x}</span></button>`).join('')}</div>
+    <span class="flbl">Zpětná vazba</span>
+    <div class="bigbtns two" style="margin:0">
+      <button class="secondary" data-u="report">${ic('bell')}Nahlásit problém</button>
+      <button class="secondary" data-u="fb">${ic('list')}Hlášení${S.fb.length ? ` <span class="cnt2 ${isAdmin() && S.fb.some(x => x.status === 'new') ? 'red' : ''}">${isAdmin() ? S.fb.filter(x => x.status === 'new').length || S.fb.length : fbOpen().length || S.fb.length}</span>` : ''}</button>
+    </div>
     <button class="secondary" data-u="logout">${ic('logout')}Odhlásit</button>
     <button class="secondary" data-u="update">${ic('swap')}Načíst nejnovější verzi</button>
     <p class="hint" style="margin:0;text-align:center">Lisy na hale · verze ${VERSION}</p>`;
@@ -1329,6 +1461,8 @@ function openUserMenu() {
     const b = e.target.closest('[data-u]'); if (!b) return;
     if (b.dataset.u === 'close') closeDlg2();
     if (b.dataset.u === 'logout') logout();
+    if (b.dataset.u === 'report') openReport(MENU_FROM);
+    if (b.dataset.u === 'fb') openFeedback();
     if (b.dataset.u === 'update') { closeDlg2(); $('bootBtn').click(); }
     if (b.dataset.u === 'fs') { setFs(+b.dataset.fs); $('sheet2').querySelectorAll('[data-u="fs"]').forEach(x => x.setAttribute('aria-pressed', +x.dataset.fs === fsLevel)); }
     if (b.dataset.u === 'theme') { theme = b.dataset.t; applyTheme(theme); $('sheet2').querySelectorAll('[data-u="theme"]').forEach(x => x.setAttribute('aria-pressed', x.dataset.t === theme)); }
@@ -1342,7 +1476,7 @@ if (s0) { S.who = s0.name; $('login').hidden = true; setAv($('userAv'), S.who); 
 (async () => {
   await loadUsers();
   const s = getSession();
-  if (s && (USERS.some(u => u.name === s.name) || !USERS.length)) { S.who = s.name; $('login').hidden = true; setAv($('userAv'), S.who); renderAll(); }
+  if (s && (USERS.some(u => u.name === s.name) || !USERS.length)) { S.who = s.name; $('login').hidden = true; setAv($('userAv'), S.who); fbBadge(); renderAll(); }
   else { try { lgUser = localStorage.getItem('lisy-last-user'); } catch (e) {} showLogin(lgUser && USERS.some(u => u.name === lgUser) ? 'pin' : undefined); }
 })();
 setInterval(() => { if (!$('login').hidden) return; const s = getSession(); if (!s) { lgUser = S.who; showLogin('pin'); } }, 60000);

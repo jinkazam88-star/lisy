@@ -22,7 +22,8 @@
   },
   {
    "name": "Miloš",
-   "pin": "66bca13fa41094ef47d3216156f036c03db0df0d517ac840c7bc94ca84d20831"
+   "pin": "66bca13fa41094ef47d3216156f036c03db0df0d517ac840c7bc94ca84d20831",
+   "admin": true
   },
   {
    "name": "Martin",
