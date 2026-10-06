@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '15';
+const VERSION = '16';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -362,13 +362,42 @@ document.addEventListener('click', e => {
   if (k === 'takeall') { overdue().forEach(x => { x.date = cur.date; x.shift = cur.shift; x.u = Date.now(); }); save(); renderAll(); toast('Převzato do této směny'); return; }
   if (!it) return;
   if (k === 'take') { it.date = cur.date; it.shift = cur.shift; it.u = Date.now(); }
-  if (k === 'done') { doneWithUndo(it); return; }
+  if (k === 'done') { if (it.type === 'task') doneWithUndo(it); else fulfil(it); return; }
   if (k === 'reopen') { it.status = 'todo'; it.u = Date.now(); }
-  if (k === 'open') { openSheet(it.lis); return; }
+  if (k === 'open') { fulfil(it); return; }
   if (k === 'edit') { openPlanEditor(it); return; }
   if (k === 'remind') { openRemind(it); return; }
   save(); renderAll();
 });
+
+/* --- splnění položky plánu = skutečná akce na lise --- */
+function fulfil(it) {
+  const p = press(it.lis); if (!p) { doneWithUndo(it); return; }
+  const r = p.slots[0];
+  editId = p.id; moveIdx = null; selQ = null; confirmOff = false;
+  if (it.type === 'run' && !r) return openEditor({ mode: 'newrun', preset: it.p });
+  if (it.type === 'prep' && !r) return openEditor({ mode: 'prep', preset: it.p, run: it.runDate ? it.runDate + '|' + it.runShift : '' });
+  if (it.type === 'start' && r && r.state === 'prep' && same(r.p, it.p)) return openEditor({ mode: 'resume' });
+  if ((it.type === 'run' || it.type === 'start') && r && r.state === 'run' && same(r.p, it.p)) { doneWithUndo(it); return; }
+  // lis není ve stavu, kdy jde akci rovnou udělat
+  const why = !r ? 'Lis je prázdný, výrobek ' + esc(it.p) + ' na něm není připravený.'
+    : `Na lise je teď <b>${esc(r.p)}</b> (${status(p).t.toLowerCase()}). ${r.state === 'run' ? 'Nejdřív ukonči výrobu a sundej nástroj.' : 'Nejdřív sundej nástroj.'}`;
+  $('sheet2').onclick = null; ED = null;
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>${TYPES[it.type]} · ${esc(p.name)}</h3><button class="x" data-fu="close" aria-label="Zavřít">${ic('x')}</button></div>
+    <div class="preview"><b>${esc(it.p)}</b> nejde teď na ${esc(p.name)} ${it.type === 'prep' ? 'připravit' : 'nasadit'}.<br>${why}</div>
+    <button class="primary" data-fu="open">${ic('grid')}Otevřít ${esc(p.name)}</button>
+    ${r && it.type !== 'start' ? `<button class="secondary" data-fu="queue">${ic('plus')}Dát ${esc(it.p)} do pořadí lisu</button>` : ''}
+    <button class="secondary" data-fu="done">${ic('done')}Označit splněné bez změny na lise</button>
+    <p class="hint" style="margin:0">Poslední možnost použij, jen když se to už udělalo mimo aplikaci.</p>`;
+  $('dlg2').showModal();
+  $('sheet2').onclick = e => {
+    const b = e.target.closest('[data-fu]'); if (!b) return;
+    const a = b.dataset.fu; closeDlg2();
+    if (a === 'open') openSheet(p.id);
+    if (a === 'done') doneWithUndo(it);
+    if (a === 'queue') { const q = p.slots.slice(1).filter(Boolean); if (q.length >= 4) return toast('Pořadí je plné'); q.push({ p: it.p }); p.slots = [p.slots[0], ...q, null, null, null, null].slice(0, 5); commit('z plánu do pořadí: ' + it.p, p.id); toast(it.p + ' je v pořadí na ' + p.name); }
+  };
+}
 
 /* --- editor položky plánu --- */
 let PE = null;
@@ -679,7 +708,7 @@ $('sheet').addEventListener('click', ev => {
     case 'newprep': return openEditor({ mode: 'prep', preset: b.dataset.p, run: b.dataset.run });
     case 'deployprep': return openEditor({ mode: 'deployprep', k: i });
     case 'plq': { const q = p.slots.slice(1).filter(Boolean); if (q.length >= 4) return toast('Pořadí je plné'); q.push({ p: b.dataset.p }); p.slots = [p.slots[0], ...q, null, null, null, null].slice(0, 5); return commit('z plánu do pořadí: ' + b.dataset.p); }
-    case 'pldone': { const it = S.plan.find(x => x.id === b.dataset.id); if (it) doneWithUndo(it); return; }
+    case 'pldone': { const it = S.plan.find(x => x.id === b.dataset.id); if (it) { if (it.type === 'task') doneWithUndo(it); else fulfil(it); } return; }
     case 'deploy': return openEditor({ mode: 'deploy', k: i });
     case 'time': return openEditor({ mode: 'time' });
     case 'resume': return openEditor({ mode: 'resume' });
@@ -792,12 +821,12 @@ $('sheet2').addEventListener('click', e => {
   ED = null; closeDlg2(); selQ = null;
   const t = end ? ', konec ' + fmtEnd(end) : '';
   switch (o.mode) {
-    case 'newrun': makeRunning(p, name, end); return commit('nasazeno ' + name + t);
-    case 'prep': makePrepared(p, name, runAt); return commit('připraveno ' + name + (runAt ? ', rozjet ' + shLabel(runAt.date, runAt.shift) : ''));
+    case 'newrun': makeRunning(p, name, end); commit('nasazeno ' + name + t); return toast(p.name + ': ' + name + ' běží');
+    case 'prep': makePrepared(p, name, runAt); toast(p.name + ': ' + name + ' připraveno'); return commit('připraveno ' + name + (runAt ? ', rozjet ' + shLabel(runAt.date, runAt.shift) : ''));
     case 'deployprep': { const it = p.slots[o.k]; p.slots[o.k] = null; compactQueue(p); makePrepared(p, it.p, runAt); return commit('připraveno ' + it.p + (runAt ? ', rozjet ' + shLabel(runAt.date, runAt.shift) : '')); }
     case 'deploy': { const it = p.slots[o.k]; p.slots[o.k] = null; compactQueue(p); makeRunning(p, it.p, end); return commit('nasazeno ' + it.p + t); }
     case 'time': p.slots[0].end = end; return commit('čas konce ' + p.slots[0].p + ': ' + (end ? fmtEnd(end) : 'nezadán'));
-    case 'resume': { const wasPrep = p.slots[0].state === 'prep'; Object.assign(p.slots[0], { state: 'run', end, since: Date.now() }); delete p.slots[0].note; delete p.slots[0].runAt; planOnRun(p, p.slots[0].p); return commit((wasPrep ? 'rozjeto ' : 'opět spuštěno ') + p.slots[0].p + t); }
+    case 'resume': { const wasPrep = p.slots[0].state === 'prep'; Object.assign(p.slots[0], { state: 'run', end, since: Date.now() }); delete p.slots[0].note; delete p.slots[0].runAt; planOnRun(p, p.slots[0].p); commit((wasPrep ? 'rozjeto ' : 'opět spuštěno ') + p.slots[0].p + t); return toast(p.name + ': ' + p.slots[0].p + ' běží'); }
     case 'qadd': { const q = p.slots.slice(1).filter(Boolean); q.push({ p: name }); p.slots = [p.slots[0], ...q, null, null, null, null].slice(0, 5); return commit('do pořadí: ' + name); }
     case 'qedit': { const old = p.slots[o.k].p; p.slots[o.k].p = name; return commit('upraveno v pořadí: ' + old + ' → ' + name); }
   }
