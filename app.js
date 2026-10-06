@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '13';
+const VERSION = '15';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -184,16 +184,19 @@ function renderCatalog() {
   $('products').innerHTML = S.catalog.map(c => `<option value="${esc(c)}">`).join('');
 }
 /* ============ Poznámky ============ */
+let PIDN = 0;
+const pid = () => Date.now().toString(36) + (PIDN++ % 1296).toString(36) + Math.random().toString(36).slice(2, 7);
 const openNotes = id => S.notes.filter(n => !n.done && (id === undefined || n.lis === id));
 const noteTag = n => n.lis ? esc((press(n.lis) || {}).name || 'Lis ' + n.lis) : 'Obecné';
 function noteHtml(n) {
   return `<div class="note ${n.done ? 'done' : ''}">
-    <div class="nhead"><span class="ntag">${noteTag(n)}</span><span class="nmeta">${esc(n.who || '?')} · ${fmtEnd(n.t)}</span></div>
-    <div class="ntext">${esc(n.text)}</div>
-    ${n.done ? `<div class="nmeta">vyřešil ${esc(n.doneBy || '?')} · ${fmtEnd(n.doneT)}</div>` : ''}
-    <div class="acts">${n.done
-      ? `<button class="sm" data-note="reopen" data-id="${n.id}">Vrátit</button><button class="sm del" data-note="del" data-id="${n.id}">${ic('trash')}Smazat</button>`
-      : `<button class="sm go" data-note="done" data-id="${n.id}">${ic('done')}Vyřešeno</button>`}</div>
+    ${chk(n.done, `data-note="${n.done ? 'reopen' : 'done'}" data-id="${n.id}"`, n.done ? 'Vrátit mezi otevřené' : 'Označit jako vyřešené')}
+    <div class="nbody">
+      <div class="nhead"><span class="ntag">${noteTag(n)}</span><span class="nmeta">${esc(n.who || '?')} · ${fmtEnd(n.t)}</span></div>
+      <div class="ntext">${esc(n.text)}</div>
+      ${n.done ? `<div class="nmeta nok">${ic('done')}vyřešil ${esc(n.doneBy || '?')} · ${fmtEnd(n.doneT)}</div>
+        <div class="acts"><button class="sm del" data-note="del" data-id="${n.id}">${ic('trash')}Smazat</button></div>` : ''}
+    </div>
   </div>`;
 }
 function renderNotes() {
@@ -207,14 +210,14 @@ function renderNotes() {
   $('navNotes').textContent = open.length; $('navNotes').hidden = !open.length;
 }
 function addNote(lis, text) {
-  S.notes.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), lis: +lis || 0, text, who: S.who || '', t: Date.now(), done: false });
+  S.notes.push({ id: pid(), lis: +lis || 0, text, who: S.who || '', t: Date.now(), done: false });
   log(+lis || 0, 'poznámka: ' + text.slice(0, 40));
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-note]'); if (!b) return;
   const n = S.notes.find(x => x.id === b.dataset.id); if (!n) return;
   const k = b.dataset.note;
-  if (k === 'done') { n.done = true; n.doneBy = S.who || ''; n.doneT = Date.now(); log(n.lis, 'vyřešeno: ' + n.text.slice(0, 40)); }
+  if (k === 'done') { n.done = true; n.doneBy = S.who || ''; n.doneT = Date.now(); log(n.lis, 'vyřešeno: ' + n.text.slice(0, 40)); save(); renderAll(); toast('Poznámka vyřešena', () => { n.done = false; save(); renderAll(); }); return; }
   if (k === 'reopen') { n.done = false; }
   if (k === 'del') { if (!b.dataset.sure) { b.dataset.sure = 1; b.lastChild.textContent = 'Opravdu?'; return; } S.notes = S.notes.filter(x => x !== n); }
   save(); renderAll();
@@ -265,7 +268,7 @@ function taskTs(it) {
   if (it.shift === 'N' && h < 12) d.setDate(d.getDate() + 1);
   d.setHours(h, m, 0, 0); return d.getTime();
 }
-const pid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
 const TYPES = { run: 'Nasadit a rozjet', prep: 'Jen připravit', start: 'Rozjet', task: 'Úkol' };
 const same = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
 const live = () => S.plan.filter(x => x.status !== 'cancel');
@@ -313,18 +316,18 @@ function piHtml(it, opts = {}) {
   let acts = '';
   if (it.status === 'todo') {
     if (opts.takeOver) acts += `<button class="sm go" data-pl="take" data-id="${it.id}">${ic('down')}Převzít do mé směny</button>`;
-    if (it.lis && it.type !== 'task') acts += `<button class="sm ${opts.takeOver ? '' : 'go'}" data-pl="open" data-id="${it.id}">${ic('grid')}Otevřít lis</button>`;
-    if (it.type === 'task') acts += `<button class="sm go" data-pl="done" data-id="${it.id}">${ic('done')}Hotovo</button>`;
+    if (it.lis && it.type !== 'task') acts += `<button class="sm ${opts.takeOver ? '' : 'go'}" data-pl="open" data-id="${it.id}">${ic(it.type === 'prep' ? 'wrench' : 'play')}${it.type === 'run' ? 'Nasadit na lis' : it.type === 'prep' ? 'Připravit na lis' : 'Rozjet na lise'}</button>`;
     if (ts) acts += `<button class="sm" data-pl="remind" data-id="${it.id}">${ic('bell')}Připomenout v telefonu</button>`;
     acts += `<button class="sm" data-pl="edit" data-id="${it.id}" aria-label="Upravit">${ic('edit')}</button>`;
-  } else acts += `<button class="sm" data-pl="reopen" data-id="${it.id}">Vrátit</button>`;
+  }
   return `<div class="pi ${cls}">
+    ${chk(it.status === 'done', `data-pl="${it.status === 'done' ? 'reopen' : 'done'}" data-id="${it.id}"`, it.status === 'done' ? 'Vrátit mezi nesplněné' : 'Označit jako splněné')}
     <div class="pi-time">${it.time ? `<b class="mono">${it.time}</b>` : ic(it.type === 'task' ? 'note' : 'wrench')}</div>
     <div class="pi-body">
       <div class="pi-top">${tag}${it.status === 'done' ? `<span class="pi-ok">${ic('done')}${esc(it.doneBy || '')} · ${fmtEnd(it.doneT).replace('dnes ', '')}</span>` : ts && ts > now && ts - now < 30 * M ? `<span class="pi-soon">za ${Math.ceil((ts - now) / M)} min</span>` : ''}</div>
       <div class="pi-main">${main}</div>
       <div class="pi-meta">${meta.join(' · ')}</div>
-      <div class="acts">${acts}</div>
+      ${acts ? `<div class="acts">${acts}</div>` : ''}
     </div></div>`;
 }
 function sortItems(a, b) {
@@ -359,7 +362,7 @@ document.addEventListener('click', e => {
   if (k === 'takeall') { overdue().forEach(x => { x.date = cur.date; x.shift = cur.shift; x.u = Date.now(); }); save(); renderAll(); toast('Převzato do této směny'); return; }
   if (!it) return;
   if (k === 'take') { it.date = cur.date; it.shift = cur.shift; it.u = Date.now(); }
-  if (k === 'done') markDone(it);
+  if (k === 'done') { doneWithUndo(it); return; }
   if (k === 'reopen') { it.status = 'todo'; it.u = Date.now(); }
   if (k === 'open') { openSheet(it.lis); return; }
   if (k === 'edit') { openPlanEditor(it); return; }
@@ -518,8 +521,13 @@ function showAlarm(it, ts) {
   const left = Math.round((ts - Date.now()) / M);
   el.innerHTML = `<div class="alarm-h">${ic('bell')}<b>${it.time}</b><span>${left > 0 ? 'za ' + left + ' min' : 'teď'}</span></div>
     <div class="alarm-t">${esc(planText(it))}</div>${it.lis && press(it.lis) ? `<div class="alarm-m">${esc(press(it.lis).name)}</div>` : ''}
-    <div class="acts"><button class="sm go" data-al="done">${ic('done')}Hotovo</button><button class="sm" data-al="close">Zavřít</button></div>`;
-  el.onclick = e => { const b = e.target.closest('[data-al]'); if (!b) return; if (b.dataset.al === 'done') { markDone(it); save(); renderAll(); } el.remove(); };
+    <div class="acts"><button class="sm" data-al="done">${ic('done')}Označit splněné</button><button class="sm" data-al="later">${ic('clock')}Později (10 min)</button><button class="sm" data-al="close">Zavřít</button></div>`;
+  el.onclick = e => {
+    const b = e.target.closest('[data-al]'); if (!b) return;
+    if (b.dataset.al === 'done') doneWithUndo(it);
+    if (b.dataset.al === 'later') setTimeout(() => { if (it.status === 'todo') showAlarm(it, ts); }, 10 * M);
+    el.remove();
+  };
   document.body.append(el);
   try { navigator.vibrate && navigator.vibrate([400, 200, 400, 200, 400]); } catch (e) {}
 }
@@ -569,9 +577,8 @@ function planCards(p) {
     if (it.type === 'run') a = !r ? `<button class="sm go" data-a="newrun" data-p="${esc(it.p)}">${ic('play')}Nasadit a rozjet</button>` : `<button class="sm" data-a="plq" data-p="${esc(it.p)}">${ic('plus')}Do pořadí</button>`;
     if (it.type === 'prep') a = !r ? `<button class="sm prep" data-a="newprep" data-p="${esc(it.p)}" data-run="${it.runDate ? it.runDate + '|' + it.runShift : ''}">${ic('wrench')}Připravit</button>` : `<button class="sm" data-a="plq" data-p="${esc(it.p)}">${ic('plus')}Do pořadí</button>`;
     if (it.type === 'start') a = r && r.state === 'prep' && same(r.p, it.p) ? `<button class="sm go" data-a="resume">${ic('play')}Rozjet</button>` : '';
-    if (it.type === 'task') a = `<button class="sm go" data-a="pldone" data-id="${it.id}">${ic('done')}Hotovo</button>`;
     const late = skNum(it.date, it.shift) < curNum();
-    return `<div class="plrow"><div><span class="ptag t-${it.type}">${TYPES[it.type]}</span> <b>${esc(it.type === 'task' ? (it.time ? it.time + ' ' : '') + it.text : it.p)}</b>${late ? ' <em class="bad">z ' + shLabel(it.date, it.shift).toLowerCase() + '</em>' : ''}${it.note ? `<div class="pi-meta">${esc(it.note)}</div>` : ''}</div><div class="acts">${a}${it.type !== 'task' ? `<button class="sm" data-a="pldone" data-id="${it.id}" aria-label="Označit splněné">${ic('done')}</button>` : ''}</div></div>`;
+    return `<div class="plrow">${chk(false, `data-a="pldone" data-id="${it.id}"`, 'Označit jako splněné')}<div class="plmain"><div><span class="ptag t-${it.type}">${TYPES[it.type]}</span> <b>${esc(it.type === 'task' ? (it.time ? it.time + ' ' : '') + it.text : it.p)}</b>${late ? ' <em class="bad">z ' + shLabel(it.date, it.shift).toLowerCase() + '</em>' : ''}${it.note ? `<div class="pi-meta">${esc(it.note)}</div>` : ''}</div>${a ? `<div class="acts">${a}</div>` : ''}</div></div>`;
   }).join('')}</div>`;
 }
 function queueHtml(p, s, i) {
@@ -672,7 +679,7 @@ $('sheet').addEventListener('click', ev => {
     case 'newprep': return openEditor({ mode: 'prep', preset: b.dataset.p, run: b.dataset.run });
     case 'deployprep': return openEditor({ mode: 'deployprep', k: i });
     case 'plq': { const q = p.slots.slice(1).filter(Boolean); if (q.length >= 4) return toast('Pořadí je plné'); q.push({ p: b.dataset.p }); p.slots = [p.slots[0], ...q, null, null, null, null].slice(0, 5); return commit('z plánu do pořadí: ' + b.dataset.p); }
-    case 'pldone': { const it = S.plan.find(x => x.id === b.dataset.id); if (it) { markDone(it); return commit(); } return; }
+    case 'pldone': { const it = S.plan.find(x => x.id === b.dataset.id); if (it) doneWithUndo(it); return; }
     case 'deploy': return openEditor({ mode: 'deploy', k: i });
     case 'time': return openEditor({ mode: 'time' });
     case 'resume': return openEditor({ mode: 'resume' });
@@ -911,8 +918,12 @@ function unpack(o) {
   const notes = (o.nt || []).map(a => ({ id: a[0], lis: a[1], text: a[2], who: a[3], t: abs(a[4]), done: !!a[5], doneBy: a[6], doneT: abs(a[7]) }));
   return { kind: 'shift', presses, catalog: o.c || [], notes, plan: unpackPlan(o.pl, abs), who: o.w, t: o.t * M };
 }
-function decodeText(txt) {
+async function decodeText(txt) {
   txt = (txt || '').trim();
+  if (txt.startsWith('L2:')) {
+    const o = JSON.parse(await inflate(b45dec(txt.slice(3))));
+    return o.k ? catUnpack(o) : o.pp ? planUnpack(o) : unpack(o);
+  }
   if (txt.startsWith(PREFIX)) {
     const o = JSON.parse(LZString.decompressFromBase64(txt.slice(PREFIX.length)));
     return o.k ? catUnpack(o) : o.pp ? planUnpack(o) : unpack(o);
@@ -926,32 +937,80 @@ function decodeText(txt) {
 function closeDlg2() { stopCam(); $('dlg2').close(); }
 $('dlg2').addEventListener('close', stopCam);
 
-const CHUNK = 420; // znaků na jeden QR kód – menší kód se lépe skenuje
-function qrParts(kind) {
-  const data = LZString.compressToBase64(JSON.stringify(kind === 'cat' ? catPack() : kind === 'plan' ? planPack() : packState(false)));
-  const id = Math.random().toString(36).slice(2, 6), n = Math.ceil(data.length / CHUNK), parts = [];
-  for (let k = 0; k < n; k++) parts.push(`${PREFIX}${id}:${k + 1}/${n}:${data.slice(k * CHUNK, (k + 1) * CHUNK)}`);
+const CHUNK = 420; // starý formát (LISY1): znaků na jeden QR kód
+/* Úsporný formát L2 – BEZE ZTRÁTY: stejná data, jen komprese deflate a kódování base45,
+   které přesně sedí do alfanumerického režimu QR kódu (místo base64 v bajtovém režimu). */
+const CHUNK2 = 640; // znaků base45 na jeden kód – kód má stejnou hustotu jako dřív
+const B45 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
+const HAS_CS = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
+function b45enc(u8) {
+  let o = '';
+  for (let i = 0; i < u8.length; i += 2) {
+    if (i + 1 < u8.length) { let x = u8[i] * 256 + u8[i + 1]; const a = x % 45; x = (x - a) / 45; const b = x % 45; o += B45[a] + B45[b] + B45[(x - b) / 45]; }
+    else { const x = u8[i]; o += B45[x % 45] + B45[Math.floor(x / 45)]; }
+  }
+  return o;
+}
+function b45dec(s) {
+  const out = [];
+  for (let i = 0; i < s.length; i += 3) {
+    const v = [...s.slice(i, i + 3)].map(c => { const k = B45.indexOf(c); if (k < 0) throw new Error('vadný znak'); return k; });
+    if (v.length === 3) { const x = v[0] + v[1] * 45 + v[2] * 2025; if (x > 65535) throw new Error('vadná data'); out.push(x >> 8, x & 255); }
+    else if (v.length === 2) { const x = v[0] + v[1] * 45; if (x > 255) throw new Error('vadná data'); out.push(x); }
+    else throw new Error('vadná délka');
+  }
+  return new Uint8Array(out);
+}
+const deflate = async str => new Uint8Array(await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
+const inflate = async u8 => await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+const payloadFor = kind => kind === 'cat' ? catPack() : kind === 'plan' ? planPack() : packState(false);
+async function qrParts(kind) {
+  const json = JSON.stringify(payloadFor(kind));
+  if (!HAS_CS) { // starší telefon: původní formát
+    const data = LZString.compressToBase64(json), id = Math.random().toString(36).slice(2, 6), n = Math.ceil(data.length / CHUNK), parts = [];
+    for (let k = 0; k < n; k++) parts.push({ t: `${PREFIX}${id}:${k + 1}/${n}:${data.slice(k * CHUNK, (k + 1) * CHUNK)}`, mode: 'Byte' });
+    return parts;
+  }
+  const data = b45enc(await deflate(json)), id = Math.random().toString(36).slice(2, 6).toUpperCase(), n = Math.ceil(data.length / CHUNK2), parts = [];
+  for (let k = 0; k < n; k++) parts.push({ t: `L2:${id}:${k + 1}/${n}:${data.slice(k * CHUNK2, (k + 1) * CHUNK2)}`, mode: 'Alphanumeric' });
   return parts;
 }
 let qrTimer = null;
-function openGive(kind) {
+async function openGive(kind) {
   kind = kind === 'cat' || kind === 'plan' ? kind : 'shift';
   if (kind === 'shift' && !S.who) { showLogin(); return; }
   if (kind === 'cat' && !S.catalog.length) { toast('Katalog je prázdný'); return; }
-  const svgs = qrParts(kind).map(t => { const q = qrcode(0, 'M'); q.addData(t); q.make(); return q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); });
+  const svgs = (await qrParts(kind)).map(x => { const q = qrcode(0, 'M'); q.addData(x.t, x.mode); q.make(); return q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); });
   $('sheet2').innerHTML = `<div class="sh-head"><h3>${kind === 'cat' ? 'Sdílet katalog' : kind === 'plan' ? 'Sdílet plán' : 'Předat směnu'}</h3><button class="x" data-b="close" aria-label="Zavřít">${ic('x')}</button></div>
-    <p class="hint" style="margin:0">${kind === 'cat' ? `Katalog má ${S.catalog.length} výrobků. Kolega v aplikaci dá <b>Katalog → Načíst katalog</b>` : kind === 'plan' ? 'Kolega v aplikaci dá <b>Plán → Načíst plán</b>' : 'Nástupce v aplikaci dá <b>Předání → Načíst od předchozí směny</b>'} a namíří telefon na kód.${svgs.length > 1 ? ' Kódy se samy střídají, drž telefon namířený, dokud nenačte všechny.' : ''} Jas displeje dej na maximum.</p>
+    <p class="hint" style="margin:0">${kind === 'cat' ? `Katalog má ${S.catalog.length} výrobků. Kolega v aplikaci dá <b>Katalog → Načíst katalog</b>` : kind === 'plan' ? 'Kolega v aplikaci dá <b>Plán → Načíst plán</b>' : 'Nástupce v aplikaci dá <b>Předání → Načíst od předchozí směny</b>'} a namíří telefon na kód.${svgs.length > 1 ? ' Kódy se samy střídají dokola. Když to nejde načíst, dej Pozastavit a přepínej ručně.' : ''} Jas displeje dej na maximum.</p>
     <div class="qrbox" id="qrbox"></div>
-    ${svgs.length > 1 ? '<p class="hint" style="margin:0;text-align:center" id="qrno"></p>' : ''}
+    ${svgs.length > 1 ? `<div class="qctl">
+      <button class="icb" data-b="prev" aria-label="Předchozí kód">${ic('back')}</button>
+      <div class="qno"><b id="qrno"></b><div class="qprog" id="qrdots"></div></div>
+      <button class="icb" data-b="next" aria-label="Další kód">${ic('chev')}</button>
+    </div>
+    <button class="secondary" data-b="pause" id="qrPause">${ic('pause')}Pozastavit střídání</button>` : ''}
     <button class="secondary" data-b="file">Poslat jako soubor (WhatsApp, e-mail…)</button>`;
   let k = 0;
-  const show = () => { $('qrbox').innerHTML = svgs[k]; if ($('qrno')) $('qrno').textContent = 'Kód ' + (k + 1) + ' z ' + svgs.length; k = (k + 1) % svgs.length; };
-  show(); if (svgs.length > 1) qrTimer = setInterval(show, 1200);
+  const n = svgs.length;
+  const show = () => {
+    $('qrbox').innerHTML = svgs[k];
+    if ($('qrno')) { $('qrno').textContent = 'Kód ' + (k + 1) + ' z ' + n; $('qrdots').innerHTML = svgs.map((_, i) => `<i class="${i === k ? 'cur' : ''}"></i>`).join(''); }
+  };
+  const auto = on => {
+    if (qrTimer) clearInterval(qrTimer); qrTimer = null;
+    if (on && n > 1) qrTimer = setInterval(() => { k = (k + 1) % n; show(); }, 1200);
+    if ($('qrPause')) $('qrPause').innerHTML = on ? ic('pause') + 'Pozastavit střídání' : ic('play') + 'Spustit střídání';
+  };
+  show(); auto(true);
   $('dlg2').showModal();
   $('sheet2').onclick = e => {
     const b = e.target.closest('[data-b]'); if (!b) return;
-    if (b.dataset.b === 'close') closeDlg2();
-    if (b.dataset.b === 'file') shareFile(kind);
+    const a = b.dataset.b;
+    if (a === 'close') closeDlg2();
+    if (a === 'file') shareFile(kind);
+    if (a === 'pause') auto(!qrTimer);
+    if (a === 'prev' || a === 'next') { auto(false); k = (k + (a === 'next' ? 1 : n - 1)) % n; show(); }
   };
 }
 async function shareFile(kind) {
@@ -1002,16 +1061,17 @@ async function startScan() {
         const img = ctx.getImageData(0, 0, c.width, c.height), r = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
         if (r) txt = r.data;
       }
-      const m = txt && txt.match(/^LISY1:(\w+):(\d+)\/(\d+):(.*)$/s);
+      const m = txt && txt.match(/^(LISY1|L2):(\w+):(\d+)\/(\d+):(.*)$/s);
       if (m) {
-        if (got.id !== m[1]) { got.id = m[1]; got.parts = {}; }
-        got.parts[m[2]] = m[4];
-        const n = +m[3], have = Object.keys(got.parts).length;
+        if (got.id !== m[1] + m[2]) { got.id = m[1] + m[2]; got.parts = {}; }
+        got.parts[m[3]] = m[5];
+        const n = +m[4], have = Object.keys(got.parts).length;
         if (have >= n) {
           stopCam(); v.hidden = true;
           let data = ''; for (let k = 1; k <= n; k++) data += got.parts[k];
-          previewImport(PREFIX + data);
-        } else $('takeMsg').innerHTML = `<p class="hint">Načteno ${have} z ${n} kódů, drž telefon namířený…</p>`;
+          previewImport(m[1] + ':' + data);
+        } else $('takeMsg').innerHTML = `<div class="qprog big">${Array.from({ length: n }, (_, i) => `<i class="${got.parts[i + 1] ? 'on' : ''}">${i + 1}</i>`).join('')}</div>
+          <p class="hint" style="text-align:center">Načteno <b>${have} z ${n}</b> kódů, drž telefon namířený…</p>`;
       }
     } catch (e) { /* keep scanning */ }
     busy = false;
@@ -1023,8 +1083,8 @@ $('fileIn').addEventListener('change', async e => {
   previewImport(await f.text());
 });
 let pending = null;
-function previewImport(txt) {
-  try { pending = decodeText(txt); } catch (e) { $('takeMsg').innerHTML = '<p class="hint">Tohle není předání ani katalog z aplikace Lisy.</p>'; return; }
+async function previewImport(txt) {
+  try { pending = await decodeText(txt); } catch (e) { $('takeMsg').innerHTML = '<p class="hint">Tohle není předání ani katalog z aplikace Lisy.</p>'; return; }
   if (pending.kind === 'plan') {
     const nw = pending.plan.filter(x => !S.plan.some(y => y.id === x.id)).length, todo = pending.plan.filter(x => x.status === 'todo').length;
     $('takeMsg').innerHTML = `<div class="preview">Plán od: <b>${esc(pending.who || '?')}</b>, ${fmtEnd(pending.t)}<br>Položek: <b>${pending.plan.length}</b> (nesplněných ${todo}), nových pro tebe: <b>${nw}</b></div>
@@ -1066,7 +1126,19 @@ function applyImport() {
 }
 
 /* ============ Global UI ============ */
-function toast(t) { const e = document.createElement('div'); e.className = 'toast'; e.textContent = t; document.body.append(e); setTimeout(() => e.remove(), 2200); }
+function toast(t, undo) {
+  document.querySelectorAll('.toast').forEach(x => x.remove());
+  const e = document.createElement('div'); e.className = 'toast' + (undo ? ' undo' : '');
+  e.innerHTML = `<span>${esc(t)}</span>` + (undo ? '<button>Vrátit</button>' : '');
+  if (undo) e.querySelector('button').onclick = () => { undo(); e.remove(); };
+  const host = [...document.querySelectorAll('dialog')].reverse().find(d => d.open) || document.body;
+  host.append(e); setTimeout(() => e.remove(), undo ? 5000 : 2200);
+}
+const chk = (on, attrs, label) => `<button class="chk ${on ? 'on' : ''}" ${attrs} aria-label="${label}" title="${label}">${on ? ic('done') : ''}</button>`;
+function doneWithUndo(it) {
+  markDone(it); save(); renderAll();
+  toast('Označeno jako splněné', () => { it.status = 'todo'; delete it.doneBy; delete it.doneT; it.u = Date.now(); save(); renderAll(); });
+}
 document.addEventListener('click', e => {
   const o = e.target.closest('[data-open]'); if (o) return openSheet(+o.dataset.open);
   const f = e.target.closest('[data-f]');
