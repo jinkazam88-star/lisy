@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '16';
+const VERSION = '17';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -1268,6 +1268,17 @@ function logout() {
   if ($('dlg2').open) closeDlg2(); if ($('dlg').open) $('dlg').close();
   S.who = ''; save(); lgUser = null; showLogin();
 }
+/* velikost písma (každý telefon zvlášť) */
+const FS = ['Normální', 'Větší', 'Největší'];
+let fsLevel = 1; try { fsLevel = +localStorage.getItem('lisy-fs') || 1; } catch (e) {}
+function setFs(n) {
+  fsLevel = n;
+  if (n > 1) document.documentElement.setAttribute('data-fs', n); else document.documentElement.removeAttribute('data-fs');
+  try { if (n > 1) localStorage.setItem('lisy-fs', n); else localStorage.removeItem('lisy-fs'); } catch (e) {}
+  $('lgFsT').textContent = n === 3 ? 'Normální písmo' : n === 2 ? 'Ještě větší písmo' : 'Větší písmo';
+}
+setFs(fsLevel);
+$('lgFs').addEventListener('click', () => setFs(fsLevel % 3 + 1));
 function openUserMenu() {
   $('sheet2').onclick = null;
   const s = getSession();
@@ -1275,6 +1286,8 @@ function openUserMenu() {
     <div class="me"><span class="av av-lg" style="--h:${avHue(S.who)}">${esc((S.who || '?').slice(0, 1))}</span><div><b>${esc(S.who || '—')}</b><div class="hint" style="margin:0">přihlášen ${s ? fmtEnd(s.t) : ''} · znovu PIN za ${SESSION_H} h</div></div></div>
     <span class="flbl">Vzhled</span>
     <div class="seg">${Object.entries(THEMES).map(([k, v]) => `<button data-u="theme" data-t="${k}" aria-pressed="${k === theme}">${ic(v[0])}${{ auto: 'Podle telefonu', light: 'Světlý', dark: 'Tmavý' }[k]}</button>`).join('')}</div>
+    <span class="flbl">Velikost písma</span>
+    <div class="seg fsseg">${FS.map((x, i) => `<button data-u="fs" data-fs="${i + 1}" class="s${i + 1}" aria-pressed="${i + 1 === fsLevel}">Aa<span style="font-weight:600;font-size:.8rem">${x}</span></button>`).join('')}</div>
     <button class="secondary" data-u="logout">${ic('logout')}Odhlásit</button>
     <button class="secondary" data-u="update">${ic('swap')}Načíst nejnovější verzi</button>
     <p class="hint" style="margin:0;text-align:center">Lisy na hale · verze ${VERSION}</p>`;
@@ -1284,6 +1297,7 @@ function openUserMenu() {
     if (b.dataset.u === 'close') closeDlg2();
     if (b.dataset.u === 'logout') logout();
     if (b.dataset.u === 'update') { closeDlg2(); $('bootBtn').click(); }
+    if (b.dataset.u === 'fs') { setFs(+b.dataset.fs); $('sheet2').querySelectorAll('[data-u="fs"]').forEach(x => x.setAttribute('aria-pressed', +x.dataset.fs === fsLevel)); }
     if (b.dataset.u === 'theme') { theme = b.dataset.t; applyTheme(theme); $('sheet2').querySelectorAll('[data-u="theme"]').forEach(x => x.setAttribute('aria-pressed', x.dataset.t === theme)); }
   };
 }

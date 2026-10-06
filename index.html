@@ -10,7 +10,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=16">
+<link rel="stylesheet" href="styles.css?v=17">
+<script>try { var fs = localStorage.getItem('lisy-fs'); if (fs) document.documentElement.setAttribute('data-fs', fs); } catch (e) {}</script>
 </head>
 <body>
 <div class="boot-err" id="bootErr" hidden>
@@ -47,6 +48,7 @@ document.addEventListener('click', function (ev) {
       <div class="pad" id="lgPad"></div>
     </div>
   </div>
+  <button class="lg-fs" id="lgFs" type="button"><span class="aa">A<b>A</b></span><span id="lgFsT">Větší písmo</span></button>
   <div class="lg-foot" id="lgFoot"></div>
 </div>
 <header class="appbar">
@@ -150,9 +152,9 @@ document.addEventListener('click', function (ev) {
 <datalist id="products"></datalist>
 <input type="file" id="fileIn" accept=".json,application/json" hidden>
 
-<script src="qrcode.js?v=16"></script>
-<script src="lz-string.min.js?v=16"></script>
-<script src="jsQR.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="qrcode.js?v=17"></script>
+<script src="lz-string.min.js?v=17"></script>
+<script src="jsQR.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

@@ -36,7 +36,10 @@
 
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 var(--f-body);padding:0 16px calc(76px + env(safe-area-inset-bottom,0px))}
+html{font-size:100%}
+html[data-fs="2"]{font-size:115%}
+html[data-fs="3"]{font-size:130%}
+body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.4 var(--f-body);padding:0 16px calc(76px + env(safe-area-inset-bottom,0px))}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
@@ -361,3 +364,18 @@ a.secondary{text-decoration:none;color:var(--fg)}
 .qprog.big{gap:6px;margin-top:4px}
 .qprog.big i{width:30px;height:30px;border-radius:6px;display:grid;place-items:center;font-style:normal;font-size:.8rem;font-weight:700;color:var(--muted);background:var(--panel);border:1.5px dashed var(--line-2)}
 .qprog.big i.on{background:var(--ok);border:1.5px solid var(--ok);color:#fff}
+
+/* velikost písma */
+html[data-fs="3"] .grid{grid-template-columns:1fr}
+html[data-fs="2"] nav button,html[data-fs="3"] nav button{font-size:.62rem}
+html[data-fs="3"] .stat span{font-size:.62rem}
+html[data-fs] svg.i{width:1.25em;height:1.25em}
+html[data-fs] nav button svg.i{width:24px;height:24px}
+.fsseg button{font-weight:700}
+.fsseg .s1{font-size:.85rem}.fsseg .s2{font-size:1rem}.fsseg .s3{font-size:1.2rem}
+.lg-fs{align-self:center;margin-top:18px;display:inline-flex;align-items:center;gap:10px;background:var(--bar-2);border:1px solid var(--bar-line);color:var(--bar-fg);border-radius:999px;padding:10px 18px;font-weight:600}
+.aa{font:700 1rem var(--f-display);letter-spacing:.02em}.aa b{font-size:1.35em}
+.t-top{flex-wrap:wrap;row-gap:4px}
+.t-top .right{flex-wrap:wrap;justify-content:flex-end}
+.pill{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+html[data-fs="2"] .pill{font-size:.62rem;padding:3px 6px}
