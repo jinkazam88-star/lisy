@@ -1,5 +1,5 @@
 // Offline cache. Při každé změně aplikace zvyš číslo verze.
-const CACHE = 'lisy-v19';
+const CACHE = 'lisy-v20';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'users.json',
   'qrcode.js', 'lz-string.min.js', 'jsQR.js',
   'icon-192.png', 'icon-512.png',

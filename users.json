@@ -44,6 +44,11 @@
   {
    "name": "Pavel",
    "pin": "fa50dfd39a7533a2aab560db00369d3a039476436ad96603c96c47f1568f75cf"
+  },
+  {
+   "name": "Basl",
+   "pin": "7065b7cb9b20eb06104e4be13fd74cb996257f45870cff5b64e561e95ce3fdc7",
+   "role": "mistr"
   }
  ]
 }

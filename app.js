@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '19';
+const VERSION = '20';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -9,7 +9,7 @@ const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4
 function emptyState() {
   const presses = [];
   for (let i = 1; i <= PRESS_COUNT; i++) presses.push({ id: i, name: 'Lis ' + String(i).padStart(2, '0'), slots: [null, null, null, null, null] });
-  return { v: 1, presses, catalog: [], log: [], notes: [], plan: [], fb: [], who: '', updated: 0, from: null };
+  return { v: 1, presses, catalog: [], log: [], notes: [], plan: [], fb: [], staff: {}, ops: { list: ['Nykodýmová', 'Sejkorová', 'Petříková', 'Hrachovcová', 'Zunová', 'Voslařová', 'Zrůstová', 'Tichá'], u: 0 }, who: '', updated: 0, from: null };
 }
 let S;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
@@ -17,6 +17,8 @@ if (!S || !Array.isArray(S.presses)) S = emptyState();
 if (!Array.isArray(S.notes)) S.notes = [];
 if (!Array.isArray(S.plan)) S.plan = [];
 if (!Array.isArray(S.fb)) S.fb = [];
+if (!S.staff || typeof S.staff !== 'object') S.staff = {};
+if (!S.ops || !Array.isArray(S.ops.list)) S.ops = { list: ['Nykodýmová', 'Sejkorová', 'Petříková', 'Hrachovcová', 'Zunová', 'Voslařová', 'Zrůstová', 'Tichá'], u: 0 };
 // převod dat ze starších verzí
 S.presses.forEach(p => {
   p.slots = p.slots.map((x, k) => { if (!x) return null; if (k > 0) return { p: x.p }; if (!x.state) { x.state = x.stopped ? 'stop' : 'run'; delete x.stopped; } delete x.dur; return x; });
@@ -97,6 +99,7 @@ const ICONS = {
   note: '<path d="M5 4h14v11l-5 5H5zM14 20v-5h5M8 9h8M8 13h4"/>',
   back: '<path d="M15 6l-6 6 6 6"/>', del: '<path d="M21 5H9l-6 7 6 7h12zM12 9l6 6M18 9l-6 6"/>', logout: '<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/>',
   bell: '<path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/>', plan: '<path d="M9 4h6v3H9zM7 5H5v16h14V5h-2M8 12l2 2 4-4M8 17h8"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/>', chev: '<path d="M9 6l6 6-6 6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
@@ -154,6 +157,7 @@ function renderGrid() {
       ${body}
       ${(() => { const pn = planNow(p.id), fin = finishFor(p.id), list = fin && !pn.includes(fin) ? [fin, ...pn] : pn.sort((a, b) => (b.type === 'finish') - (a.type === 'finish'));
         return list.length ? `<div class="tplan ${list[0].type === 'finish' ? 'fin' : ''}">${ic(list[0].type === 'finish' ? 'done' : 'plan')}<span>${list[0].type === 'finish' ? 'Ukončit ' + finishLabel(list[0]) : esc(planText(list[0]))}${list.length > 1 ? ' +' + (list.length - 1) : ''}</span></div>` : ''; })()}
+      ${(() => { const o = opNow(p.id); return o ? `<div class="top">${ic('user')}<span>${o.cur ? esc(rowName(o.cur, staffRec(shiftKey().date, shiftKey().shift).rows.indexOf(o.cur))) : '—'}${o.next ? ' → ' + esc(rowName(o.next.row, staffRec(shiftKey().date, shiftKey().shift).rows.indexOf(o.next.row))) + (o.next.at ? ' ' + hhmm(o.next.at) : '') : ''}</span></div>` : ''; })()}
       <div class="q">${q.length ? 'Další: <b>' + esc(q[0].p) + '</b>' + (q.length > 1 ? ' +' + (q.length - 1) : '') : 'Pořadí prázdné'}</div>
     </button>`;
   }).join('') || '<p class="hint">Žádný lis neodpovídá filtru.</p>';
@@ -350,6 +354,10 @@ function sortItems(a, b) {
 }
 function renderPlan() {
   if (!$('plList')) return;
+  document.querySelectorAll('[data-pm]').forEach(x => x.setAttribute('aria-pressed', x.dataset.pm === PMODE));
+  $('plTasks').hidden = PMODE !== 'tasks'; $('plTime').hidden = PMODE !== 'time'; $('plStaff').hidden = PMODE !== 'staff';
+  if (PMODE === 'time') renderTimeline();
+  if (PMODE === 'staff') renderStaff();
   const cur = shiftKey(), isCur = PV.date === cur.date && PV.shift === cur.shift;
   $('plDay').textContent = dayLabel(PV.date);
   $('plShifts').innerHTML = SH_ORDER.map(s => {
@@ -382,6 +390,258 @@ document.addEventListener('click', e => {
   if (k === 'remind') { openRemind(it); return; }
   save(); renderAll();
 });
+
+/* ============ Časová osa směny a rozdělení obsluhy ============ */
+const DEFAULT_OPS = ['Nykodýmová', 'Sejkorová', 'Petříková', 'Hrachovcová', 'Zunová', 'Voslařová', 'Zrůstová', 'Tichá'];
+const isMistr = () => (USERS.find(u => u.name === S.who) || {}).role === 'mistr';
+const shiftStartTs = (date, shift) => { const d = dparse(date); d.setHours(SH_START[shift], 0, 0, 0); return d.getTime(); };
+const skey = (date, shift) => date + '|' + shift;
+let PMODE = 'tasks';
+function lisTimeline(p, date, shift) {
+  const S0 = shiftStartTs(date, shift), E = shiftEndTs(date, shift), r = p.slots[0], segs = [];
+  const inShift = x => x.status === 'todo' && x.lis === p.id && x.date === date && x.shift === shift;
+  const pl = live().filter(x => inShift(x) && ['run', 'prep', 'start'].includes(x.type));
+  const fin = live().find(x => inShift(x) && x.type === 'finish');
+  let t = null, cur = null;
+  const goneBefore = r && r.state === 'run' && r.end && r.end <= S0;
+  if (r && !goneBefore && r.state !== 'end') {
+    let to = r.state === 'run' && r.end && r.end < E ? r.end : null;
+    if (fin && (!fin.p || same(fin.p, r.p))) to = to || E;
+    const startItem = r.state === 'prep' ? pl.find(x => x.type === 'start' && same(x.p, r.p)) : null;
+    cur = { p: r.p, from: null, to: to && to < E ? to : null, kind: r.state, start: !!startItem };
+    segs.push(cur);
+    t = cur.to;
+  } else t = S0;
+  if (t !== null) {
+    const nxt = pl.find(x => x.type !== 'start' && (!r || !same(x.p, r.p) || goneBefore || r.state === 'end'))
+      || (cur && p.slots[1] ? { p: p.slots[1].p, src: 'queue' } : null);
+    if (nxt) segs.push({ p: nxt.p, from: t, to: null, kind: nxt.type === 'prep' ? 'prep-next' : 'next', src: nxt.id ? 'plan' : 'queue', atStart: t <= S0, toolOn: r && r.state === 'end' });
+  }
+  return segs;
+}
+const segText = (s, i, segs) => {
+  if (s.kind === 'next' || s.kind === 'prep-next') return (s.atStart ? 'nasadit na začátku směny: ' : 'od ' + hhmm(s.from) + ': ') + s.p + (s.kind === 'prep-next' ? ' (jen připravit)' : '');
+  return s.p + (s.kind === 'prep' ? (s.start ? ' (rozjet)' : ' (připraveno)') : s.kind === 'stop' ? ' (zastaveno)' : '') + (s.to ? ' do ' + hhmm(s.to) : '');
+};
+function activeLisy(date, shift) {
+  return S.presses.map(p => ({ p, segs: lisTimeline(p, date, shift) })).filter(x => x.segs.length);
+}
+/* --- data rozdělení --- */
+const staffRec = (date, shift) => S.staff[skey(date, shift)];
+function splitTs(rec, lisId, segs) {
+  const t = rec && rec.splits && rec.splits[lisId];
+  if (t) { const [h, m] = t.split(':').map(Number), d = dparse(PV.date); if (PV.shift === 'N' && h < 12) d.setDate(d.getDate() + 1); d.setHours(h, m, 0, 0); return d.getTime(); }
+  return segs[1] ? segs[1].from : null;
+}
+function opNow(lisId, ts = Date.now()) { // kdo má lis teď (pro halu)
+  const k = shiftKey(ts), rec = staffRec(k.date, k.shift); if (!rec) return null;
+  const p = press(lisId), segs = lisTimeline(p, k.date, k.shift), ch = rec.splits && rec.splits[lisId] ? (() => { const sv = PV; PV = k; const v = splitTs(rec, lisId, segs); PV = sv; return v; })() : segs[1] ? segs[1].from : null;
+  let cur = null, next = null;
+  rec.rows.forEach(row => row.items.filter(it => it.lis === lisId).forEach(it => {
+    if (it.part === 'all') cur = row;
+    if (it.part === 'a' && (!ch || ts < ch)) cur = row;
+    if (it.part === 'b') { if (ch && ts >= ch) cur = row; else next = { row, at: ch }; }
+  }));
+  return cur || next ? { cur, next } : null;
+}
+const rowName = (row, i) => row.op || 'Obsluha ' + (i + 1);
+function staffGuard(desc, fn) { // vedoucí mění jen s potvrzením
+  if (isMistr()) { fn(); return; }
+  $('sheet2').onclick = null; ED = null;
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>Změnit rozdělení?</h3><button class="x" data-sg="no" aria-label="Zavřít">${ic('x')}</button></div>
+    <div class="preview">${desc}</div>
+    <p class="hint" style="margin:0">Rozdělení obsluhy připravuje mistr. Změnu potvrď, ať se nic nepřeklikne.</p>
+    <div class="acts end"><button class="secondary" data-sg="no">Zrušit</button><button class="primary" data-sg="yes">Ano, změnit</button></div>`;
+  $('dlg2').showModal();
+  $('sheet2').onclick = e => { const b = e.target.closest('[data-sg]'); if (!b) return; closeDlg2(); if (b.dataset.sg === 'yes') fn(); };
+}
+function staffCommit(rec, msg) { rec.u = Date.now(); rec.by = S.who || ''; log(0, 'obsluha: ' + msg); save(); renderPlan(); renderGrid(); }
+function ensureRec(n) {
+  const k = skey(PV.date, PV.shift);
+  if (!S.staff[k]) S.staff[k] = { rows: [], splits: {}, u: Date.now(), by: S.who || '' };
+  const rec = S.staff[k];
+  while (rec.rows.length < n) rec.rows.push({ id: pid(), op: '', items: [] });
+  return rec;
+}
+function unassigned(rec, act) {
+  const out = [];
+  act.forEach(({ p, segs }) => {
+    const its = rec ? rec.rows.flatMap(r => r.items.filter(i => i.lis === p.id)) : [];
+    const has = part => its.some(i => i.part === part || i.part === 'all');
+    if (segs.length > 1) { if (!has('a')) out.push({ lis: p.id, part: its.length ? 'a' : 'all' }); if (its.length && !has('b')) out.push({ lis: p.id, part: 'b' }); }
+    else if (!has('a')) out.push({ lis: p.id, part: 'all' });
+  });
+  return out;
+}
+function itemLabel(it, act) {
+  const a = act.find(x => x.p.id === it.lis), p = press(it.lis); if (!a) return `<b>${esc(p ? p.name : '?')}</b> · nic nejede`;
+  const s = a.segs;
+  if (it.part === 'a') return `<b>${esc(p.name)}</b> · ${esc(segText(s[0], 0, s))}`;
+  if (it.part === 'b') return `<b>${esc(p.name)}</b> · ${esc(s[1] ? segText(s[1], 1, s) : '')}`;
+  return `<b>${esc(p.name)}</b> · ${s.map((x, i) => esc(segText(x, i, s))).join(' → ')}`;
+}
+/* --- vykreslení --- */
+function renderTimeline() {
+  const act = activeLisy(PV.date, PV.shift);
+  const flag = segs => segs.some(s => s.kind === 'next' && s.atStart) ? '<span class="tl-f st">nasadit hned</span>' : segs.length > 1 ? `<span class="tl-f ch">přestavba ${segs[1].atStart ? 'na začátku' : hhmm(segs[1].from)}</span>` : '';
+  const rows = act.sort((a, b) => (a.segs[1] ? (a.segs[1].from || 0) : 9e15) - (b.segs[1] ? (b.segs[1].from || 0) : 9e15) || a.p.id - b.p.id);
+  const now = shiftKey(), isCur = now.date === PV.date && now.shift === PV.shift;
+  $('plTime').innerHTML = `<p class="hint">${isCur ? 'Aktuální směna.' : 'Odhad podle časů konce, pořadí a plánu.'} Co se na lisech děje během směny ${SH[PV.shift].toLowerCase()}.</p>
+    <div class="list">${rows.map(({ p, segs }) => `<button class="tl" data-open="${p.id}">
+      <div class="tl-h"><span class="no">${esc(p.name)}</span>${flag(segs)}</div>
+      <div class="tl-segs">${segs.map((s, i) => `<span class="tl-s k-${s.kind}">${esc(segText(s, i, segs))}</span>`).join('<span class="tl-arr">→</span>')}</div>
+      ${opLine(p.id, PV.date, PV.shift)}
+    </button>`).join('') || '<p class="hint">V této směně na lisech nic neběží ani není naplánované.</p>'}</div>`;
+}
+function opLine(lisId, date, shift) {
+  const rec = staffRec(date, shift); if (!rec) return '';
+  const names = rec.rows.map((r, i) => ({ r, i })).filter(({ r }) => r.items.some(it => it.lis === lisId)).map(({ r, i }) => {
+    const it = r.items.find(x => x.lis === lisId); return esc(rowName(r, i)) + (it.part === 'a' ? ' (do změny)' : it.part === 'b' ? ' (po změně)' : '');
+  });
+  return names.length ? `<div class="tl-op">${ic('user')}${names.join(' · ')}</div>` : '<div class="tl-op none">nepřiřazeno</div>';
+}
+function renderStaff() {
+  const rec = staffRec(PV.date, PV.shift), act = activeLisy(PV.date, PV.shift), un = unassigned(rec, act);
+  const mistr = isMistr();
+  let h = `<div class="st-who">${mistr ? `${ic('user')}Jsi mistr, změny se ukládají hned.` : `${ic('user')}Změny potvrzuješ, rozdělení připravuje mistr.`}${rec ? ` <span class="hint">Naposledy upravil ${esc(rec.by || '?')} ${fmtEnd(rec.u)}</span>` : ''}</div>`;
+  if (!rec || !rec.rows.length) {
+    h += `<div class="st-start"><span class="flbl">Kolik bude obsluhy na ${SH[PV.shift].toLowerCase()}?</span>
+      <div class="quick">${[3, 4, 5, 6, 7, 8, 9, 10].map(n => `<button class="chip" data-st="count" data-n="${n}">${n}</button>`).join('')}</div>
+      <p class="hint">Na směně jede nebo pojede <b>${act.length}</b> lisů.</p></div>`;
+  } else {
+    h += `<div class="st-bar"><span>Obsluha: <b>${rec.rows.length}</b></span>
+      <button class="icb" data-st="minus" aria-label="Ubrat obsluhu">−</button><button class="icb" data-st="plus" aria-label="Přidat obsluhu">+</button>
+      <button class="sm" data-st="show">${ic('grid')}Ukázat obsluze</button></div>
+      <div class="list">${rec.rows.map((row, i) => {
+        const used = rec.rows.filter((r, j) => j !== i).map(r => r.op);
+        return `<div class="strow">
+        <div class="strow-h"><span class="qn">${i + 1}</span>
+          <select data-st="op" data-i="${i}" aria-label="Jméno obsluhy ${i + 1}"><option value="">— vyber jméno —</option>${S.ops.list.map(n => `<option value="${esc(n)}" ${n === row.op ? 'selected' : ''} ${used.includes(n) ? 'disabled' : ''}>${esc(n)}${used.includes(n) ? ' (už má řádek)' : ''}</option>`).join('')}<option value="__new">+ Napsat jiné jméno…</option></select></div>
+        <div class="stitems">${row.items.map((it, k) => `<button class="stit" data-st="item" data-i="${i}" data-k="${k}">${itemLabel(it, act)}</button>`).join('') || '<span class="hint">Zatím nic přiřazeno.</span>'}</div>
+        <button class="addq sm-add" data-st="add" data-i="${i}">${ic('plus')}Přidat lis</button>
+      </div>`; }).join('')}</div>`;
+  }
+  h += `<h2>Nepřiřazeno ${un.length ? `<span class="cnt2 red">${un.length}</span>` : ''}</h2>
+    <div class="stitems">${un.map(u => `<span class="stit un">${itemLabel(u, act)}</span>`).join('') || '<p class="hint">Všechno, co jede, má svou obsluhu.</p>'}</div>
+    <h2>Seznam obsluhy <span class="cnt">${S.ops.list.length}</span></h2>
+    <div class="stitems">${S.ops.list.map((n, i) => `<span class="opchip">${esc(n)}<button data-st="opdel" data-i="${i}" aria-label="Odebrat ${esc(n)}">${ic('x')}</button></span>`).join('')}</div>
+    <form class="cat-add" id="opForm"><input type="text" id="opNew" placeholder="Přidat jméno" aria-label="Nové jméno obsluhy"><button class="primary" type="submit">Přidat</button></form>`;
+  $('plStaff').innerHTML = h;
+}
+function staffAddPicker(i) {
+  const rec = staffRec(PV.date, PV.shift), act = activeLisy(PV.date, PV.shift), un = unassigned(rec, act);
+  ED = null; $('sheet2').onclick = null;
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>Přidat k ${esc(rowName(rec.rows[i], i))}</h3><button class="x" data-sp="close" aria-label="Zavřít">${ic('x')}</button></div>
+    ${un.length ? `<p class="hint" style="margin:0">Vyber lisy, které bude obsluhovat. Lis s přestavbou se dá později rozdělit mezi dvě obsluhy.</p>
+    <div class="list" style="margin:0">${un.map((u, k) => `<label class="ps-row"><input type="checkbox" data-sk="${k}"><span>${itemLabel(u, act)}</span></label>`).join('')}</div>
+    <button class="primary" data-sp="ok">${ic('plus')}Přidat vybrané</button>` : '<p class="hint">Všechny lisy už někdo má. Lis od jiné obsluhy přesuneš klepnutím na něj.</p>'}`;
+  $('dlg2').showModal();
+  $('sheet2').onclick = e => {
+    const b = e.target.closest('[data-sp]'); if (!b) return;
+    if (b.dataset.sp === 'close') return closeDlg2();
+    const pick = un.filter((u, k) => $('sheet2').querySelector(`[data-sk="${k}"]`).checked); closeDlg2();
+    if (!pick.length) return;
+    const names = pick.map(u => press(u.lis).name).join(', ');
+    staffGuard(`Přidat <b>${esc(names)}</b> k <b>${esc(rowName(rec.rows[i], i))}</b>`, () => { rec.rows[i].items.push(...pick); staffCommit(rec, rowName(rec.rows[i], i) + ' + ' + names); });
+  };
+}
+function staffItemMenu(i, k) {
+  const rec = staffRec(PV.date, PV.shift), act = activeLisy(PV.date, PV.shift), it = rec.rows[i].items[k], a = act.find(x => x.p.id === it.lis);
+  const canSplit = it.part === 'all' && a && a.segs.length > 1, ch = a && a.segs[1] ? splitTs(rec, it.lis, a.segs) : null;
+  ED = null; $('sheet2').onclick = null;
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>${esc(press(it.lis).name)}</h3><button class="x" data-sm="close" aria-label="Zavřít">${ic('x')}</button></div>
+    <div class="preview">${itemLabel(it, act)}<br><span class="hint">Má ${esc(rowName(rec.rows[i], i))}</span></div>
+    <span class="flbl">Přesunout k</span>
+    <div class="quick">${rec.rows.map((r, j) => j === i ? '' : `<button class="chip" data-sm="move" data-j="${j}">${esc(rowName(r, j))}</button>`).join('')}</div>
+    ${canSplit ? `<span class="flbl">Po přestavbě jiná obsluha</span>
+      <p class="hint" style="margin:0">${esc(segText(a.segs[0], 0, a.segs))} zůstane, ${esc(segText(a.segs[1], 1, a.segs))} dostane:</p>
+      <div class="quick">${rec.rows.map((r, j) => j === i ? '' : `<button class="chip" data-sm="split" data-j="${j}">${esc(rowName(r, j))}</button>`).join('')}</div>` : ''}
+    ${a && a.segs[1] ? `<label class="pe-f"><span class="flbl">Čas změny na lise</span><input type="time" id="smTime" value="${ch ? hhmm(ch) : ''}"></label><button class="secondary" data-sm="time">${ic('clock')}Uložit čas změny</button>` : ''}
+    ${it.part !== 'all' ? `<button class="secondary" data-sm="join">${ic('swap')}Spojit zpět (celý lis jedné obsluze)</button>` : ''}
+    <button class="secondary del-t" data-sm="del">${ic('trash')}Odebrat z rozdělení</button>`;
+  $('dlg2').showModal();
+  $('sheet2').onclick = e => {
+    const b = e.target.closest('[data-sm]'); if (!b) return;
+    const act2 = b.dataset.sm; if (act2 === 'close') return closeDlg2();
+    const j = +b.dataset.j, lisN = press(it.lis).name, from = rowName(rec.rows[i], i), to = rec.rows[j] ? rowName(rec.rows[j], j) : '';
+    const tm = $('smTime') ? $('smTime').value : '';
+    closeDlg2();
+    if (act2 === 'move') staffGuard(`Přesunout <b>${esc(lisN)}</b> od <b>${esc(from)}</b> k <b>${esc(to)}</b>`, () => { rec.rows[i].items.splice(k, 1); rec.rows[j].items.push(it); staffCommit(rec, lisN + ': ' + from + ' → ' + to); });
+    if (act2 === 'split') staffGuard(`<b>${esc(lisN)}</b>: do změny <b>${esc(from)}</b>, po změně <b>${esc(to)}</b>`, () => { it.part = 'a'; rec.rows[j].items.push({ lis: it.lis, part: 'b' }); staffCommit(rec, lisN + ' po změně → ' + to); });
+    if (act2 === 'join') staffGuard(`Celý <b>${esc(lisN)}</b> bude mít <b>${esc(from)}</b>`, () => { rec.rows.forEach(r => { r.items = r.items.filter(x => x.lis !== it.lis || x === it); }); it.part = 'all'; staffCommit(rec, lisN + ' celý → ' + from); });
+    if (act2 === 'del') staffGuard(`Odebrat <b>${esc(lisN)}</b> od <b>${esc(from)}</b>`, () => { rec.rows[i].items.splice(k, 1); staffCommit(rec, lisN + ' odebrán od ' + from); });
+    if (act2 === 'time' && tm) staffGuard(`Čas změny na <b>${esc(lisN)}</b>: <b>${tm}</b>`, () => { rec.splits = rec.splits || {}; rec.splits[it.lis] = tm; staffCommit(rec, lisN + ' změna v ' + tm); });
+  };
+}
+function staffShow() {
+  const rec = staffRec(PV.date, PV.shift), act = activeLisy(PV.date, PV.shift);
+  ED = null; $('sheet2').onclick = null;
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>${esc(shLabel(PV.date, PV.shift))}</h3><button class="x" data-ss="close" aria-label="Zavřít">${ic('x')}</button></div>
+    <div class="bigview">${rec.rows.map((row, i) => `<div class="bv-row"><div class="bv-n">${esc(rowName(row, i))}</div>
+      <div class="bv-it">${row.items.map(it => `<div>${itemLabel(it, act)}</div>`).join('') || '<div class="hint">—</div>'}</div></div>`).join('')}</div>`;
+  $('dlg2').showModal();
+  $('sheet2').onclick = e => { if (e.target.closest('[data-ss]')) closeDlg2(); };
+}
+document.addEventListener('click', e => {
+  const m = e.target.closest('[data-pm]');
+  if (m) { PMODE = m.dataset.pm; renderPlan(); return; }
+  const b = e.target.closest('#plStaff [data-st]'); if (!b || b.tagName === 'SELECT') return;
+  const k = b.dataset.st, i = +b.dataset.i;
+  const rec = staffRec(PV.date, PV.shift);
+  if (k === 'count') { const n = +b.dataset.n; staffGuard(`Vytvořit rozdělení pro <b>${n}</b> obsluh na ${esc(shLabel(PV.date, PV.shift))}`, () => { const r = ensureRec(n); staffCommit(r, 'vytvořeno pro ' + n + ' obsluh'); }); }
+  if (k === 'plus') staffGuard('Přidat řádek obsluhy', () => { rec.rows.push({ id: pid(), op: '', items: [] }); staffCommit(rec, 'přidán řádek'); });
+  if (k === 'minus') { const last = rec.rows[rec.rows.length - 1]; staffGuard(`Ubrat poslední řádek <b>${esc(rowName(last, rec.rows.length - 1))}</b>${last.items.length ? ' i s ' + last.items.length + ' lisy (budou nepřiřazené)' : ''}`, () => { rec.rows.pop(); staffCommit(rec, 'ubrán řádek'); }); }
+  if (k === 'add') staffAddPicker(i);
+  if (k === 'item') staffItemMenu(i, +b.dataset.k);
+  if (k === 'show') staffShow();
+  if (k === 'opdel') { const n = S.ops.list[i]; staffGuard(`Odebrat <b>${esc(n)}</b> ze seznamu obsluhy`, () => { S.ops.list.splice(i, 1); S.ops.u = Date.now(); save(); renderPlan(); }); }
+});
+document.addEventListener('change', e => {
+  const s = e.target.closest('#plStaff select[data-st="op"]'); if (!s) return;
+  const rec = staffRec(PV.date, PV.shift), i = +s.dataset.i, old = rec.rows[i].op;
+  let v = s.value;
+  const apply = name => staffGuard(`Řádek ${i + 1}: <b>${esc(name || '—')}</b>${old ? ' místo ' + esc(old) : ''}`, () => { rec.rows[i].op = name; staffCommit(rec, 'řádek ' + (i + 1) + ' = ' + name); });
+  if (v === '__new') {
+    s.value = old;
+    ED = null; $('sheet2').onclick = null;
+    $('sheet2').innerHTML = `<div class="sh-head"><h3>Nové jméno</h3><button class="x" data-nn="close" aria-label="Zavřít">${ic('x')}</button></div>
+      <input type="text" id="nnName" placeholder="Příjmení"><label class="savecat"><input type="checkbox" id="nnSave" checked> Uložit do seznamu obsluhy</label>
+      <div class="acts end"><button class="secondary" data-nn="close">Zrušit</button><button class="primary" data-nn="ok">Použít</button></div>`;
+    $('dlg2').showModal(); setTimeout(() => $('nnName').focus(), 50);
+    $('sheet2').onclick = ev => {
+      const b = ev.target.closest('[data-nn]'); if (!b) return;
+      if (b.dataset.nn === 'close') return closeDlg2();
+      const n = $('nnName').value.trim(); if (!n) return toast('Napiš jméno');
+      if ($('nnSave').checked && !S.ops.list.includes(n)) { S.ops.list.push(n); S.ops.u = Date.now(); }
+      closeDlg2(); apply(n);
+    };
+    return;
+  }
+  s.value = old; apply(v);
+});
+document.addEventListener('submit', e => {
+  if (e.target.id !== 'opForm') return; e.preventDefault();
+  const n = $('opNew').value.trim(); if (!n) return;
+  if (S.ops.list.includes(n)) return toast('Už v seznamu je');
+  S.ops.list.push(n); S.ops.u = Date.now(); save(); renderPlan(); toast(n + ' přidána do seznamu');
+});
+/* --- přenos --- */
+function packStaff() {
+  const minK = skNum(addDays(shiftKey().date, -1), 'R'), st = {};
+  Object.entries(S.staff).forEach(([k, v]) => { const [d, s] = k.split('|'); if (skNum(d, s) >= minK) st[k] = { r: v.rows.map(r => [r.op, r.items.map(i => i.lis + (i.part === 'all' ? '' : i.part))]), s: v.splits || {}, u: Math.round(v.u / 1000), b: v.by }; });
+  return { st, ops: S.ops.list, ou: Math.round((S.ops.u || 0) / 1000) };
+}
+function unpackStaff(o) {
+  if (!o) return null;
+  const staff = {};
+  Object.entries(o.st || {}).forEach(([k, v]) => { staff[k] = { rows: v.r.map(([op, its]) => ({ id: pid(), op, items: its.map(x => { const m = String(x).match(/^(\d+)([ab]?)$/); return { lis: +m[1], part: m[2] || 'all' }; }) })), splits: v.s || {}, u: v.u * 1000, by: v.b }; });
+  return { staff, ops: { list: o.ops || [], u: (o.ou || 0) * 1000 } };
+}
+function mergeStaff(x) {
+  if (!x) return;
+  Object.entries(x.staff).forEach(([k, v]) => { if (!S.staff[k] || v.u > S.staff[k].u + 999) S.staff[k] = v; });
+  if (x.ops && x.ops.u > (S.ops.u || 0) + 999) S.ops = x.ops;
+}
 
 /* --- splnění položky plánu = skutečná akce na lise --- */
 function fulfil(it) {
@@ -952,6 +1212,7 @@ function packState(withCatalog) {
   if (withCatalog) o.c = S.catalog;
   o.pl = packPlan(rel);
   o.fb = packFb(rel);
+  o.sf = packStaff();
   o.nt = S.notes.filter(n => !n.done || Date.now() - n.doneT < 48 * H).slice(-60).map(n => [n.id, n.lis, n.text, n.who, rel(n.t), n.done ? 1 : 0, n.doneBy || '', rel(n.doneT)]);
   return o;
 }
@@ -967,8 +1228,8 @@ function mergePlan(items) {
   (items || []).forEach(it => { const i = S.plan.findIndex(x => x.id === it.id); if (i < 0) { S.plan.push(it); n++; } else if ((it.u || 0) > (S.plan[i].u || 0) + 999) S.plan[i] = it; });
   return n;
 }
-const planPack = () => { const t0 = Math.floor(Date.now() / M); return { pp: 1, w: S.who || '', t: t0, pl: packPlan(t => t ? Math.round(t / M) - t0 : null) }; };
-const planUnpack = o => ({ kind: 'plan', plan: unpackPlan(o.pl, v => v === null || v === undefined ? null : (o.t + v) * M), who: o.w, t: o.t * M });
+const planPack = () => { const t0 = Math.floor(Date.now() / M); return { pp: 1, w: S.who || '', t: t0, pl: packPlan(t => t ? Math.round(t / M) - t0 : null), sf: packStaff() }; };
+const planUnpack = o => ({ kind: 'plan', plan: unpackPlan(o.pl, v => v === null || v === undefined ? null : (o.t + v) * M), sf: unpackStaff(o.sf), who: o.w, t: o.t * M });
 const catPack = () => ({ k: S.catalog, w: S.who || '', t: Math.floor(Date.now() / M) });
 const catUnpack = o => ({ kind: 'cat', catalog: o.k || [], who: o.w, t: o.t * M });
 function unpack(o) {
@@ -980,7 +1241,7 @@ function unpack(o) {
       : Object.assign({ p: o.n[s[0]], end: abs(s[1]), state: ['run', 'stop', 'end', 'prep'][s[2]] || 'run', note: s[3] || '', since: abs(s[4]) }, s[5] ? { runAt: parseRunAt(s[5]) } : {}))
   }));
   const notes = (o.nt || []).map(a => ({ id: a[0], lis: a[1], text: a[2], who: a[3], t: abs(a[4]), done: !!a[5], doneBy: a[6], doneT: abs(a[7]) }));
-  return { kind: 'shift', presses, catalog: o.c || [], notes, plan: unpackPlan(o.pl, abs), fb: unpackFb(o.fb, abs), who: o.w, t: o.t * M };
+  return { kind: 'shift', presses, catalog: o.c || [], notes, plan: unpackPlan(o.pl, abs), fb: unpackFb(o.fb, abs), sf: unpackStaff(o.sf), who: o.w, t: o.t * M };
 }
 async function decodeText(txt) {
   txt = (txt || '').trim();
@@ -1180,7 +1441,7 @@ async function previewImport(txt) {
 function applyImport() {
   if (!pending) return;
   if (pending.kind === 'fb') { const n = mergeFb(pending.fb); pending = null; save(); fbBadge(); closeDlg2(); toast('Načteno, nových hlášení: ' + n); return; }
-  if (pending.kind === 'plan') { const n = mergePlan(pending.plan); pending.plan.forEach(x => x.p && addToCatalog(x.p)); pending = null; save(); renderAll(); closeDlg2(); toast('Plán načten, nových položek: ' + n); return; }
+  if (pending.kind === 'plan') { mergeStaff(pending.sf); const n = mergePlan(pending.plan); pending.plan.forEach(x => x.p && addToCatalog(x.p)); pending = null; save(); renderAll(); closeDlg2(); toast('Plán načten, nových položek: ' + n); return; }
   if (pending.kind === 'cat') {
     const before = S.catalog.length; pending.catalog.forEach(addToCatalog);
     const n = S.catalog.length - before;
@@ -1189,6 +1450,7 @@ function applyImport() {
   S.presses = pending.presses;
   mergePlan(pending.plan);
   mergeFb(pending.fb);
+  mergeStaff(pending.sf);
   (pending.notes || []).forEach(n => { const i = S.notes.findIndex(x => x.id === n.id); if (i < 0) S.notes.push(n); else S.notes[i] = n; });
   pending.catalog.forEach(addToCatalog);
   pending.presses.forEach(p => p.slots.forEach(s => s && addToCatalog(s.p)));
@@ -1392,7 +1654,7 @@ let lgUser = null, lgPin = '';
 function showLogin(step) {
   $('login').hidden = false; $('lgFoot').textContent = 'verze ' + VERSION;
   let last = ''; try { last = localStorage.getItem('lisy-last-user') || ''; } catch (e) {}
-  $('lgNames').innerHTML = USERS.length ? USERS.map(u => `<button data-user="${esc(u.name)}" class="${u.name === last ? 'last' : ''}"><span class="av" style="--h:${avHue(u.name)}">${esc(u.name.slice(0, 1))}</span>${esc(u.name)}</button>`).join('')
+  $('lgNames').innerHTML = USERS.length ? USERS.map(u => `<button data-user="${esc(u.name)}" class="${u.name === last ? 'last' : ''}"><span class="av" style="--h:${avHue(u.name)}">${esc(u.name.slice(0, 1))}</span><span>${esc(u.name)}${u.role === 'mistr' ? '<small class="lg-role">mistr</small>' : ''}</span></button>`).join('')
     : '<p class="lg-sub">Seznam uživatelů se nepodařilo načíst. Připoj se k internetu a otevři aplikaci znovu.</p>';
   if (step === 'pin' && lgUser) return pinStep(lgUser);
   $('lgStep1').hidden = false; $('lgStep2').hidden = true;
