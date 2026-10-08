@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=21">
+<link rel="stylesheet" href="styles.css?v=22">
 <script>try { var fs = localStorage.getItem('lisy-fs'); if (fs) document.documentElement.setAttribute('data-fs', fs); } catch (e) {}</script>
 </head>
 <body>
@@ -135,7 +135,7 @@ document.addEventListener('click', function (ev) {
 
   <section id="v-katalog" hidden>
     <h2>Katalog výrobků <span class="cnt" id="catCount"></span></h2>
-    <p class="hint">Výrobky, které jdou vybrat při zadávání k lisu.</p>
+    <p class="hint">Výrobky, které jdou vybrat při zadávání k lisu. Firemní seznam se načítá sám ze souboru katalog.json, vlastní výrobky přidáš tady.</p>
     <div class="bigbtns two">
       <button class="secondary" id="btnCatGive" data-ic="share">Sdílet katalog</button>
       <button class="secondary" id="btnCatTake" data-ic="scan">Načíst katalog</button>
@@ -162,9 +162,9 @@ document.addEventListener('click', function (ev) {
 <datalist id="products"></datalist>
 <input type="file" id="fileIn" accept=".json,application/json" hidden>
 
-<script src="qrcode.js?v=21"></script>
-<script src="lz-string.min.js?v=21"></script>
-<script src="jsQR.js?v=21"></script>
-<script src="app.js?v=21"></script>
+<script src="qrcode.js?v=22"></script>
+<script src="lz-string.min.js?v=22"></script>
+<script src="jsQR.js?v=22"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

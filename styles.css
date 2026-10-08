@@ -488,3 +488,6 @@ html[data-fs="2"] .pill{font-size:.62rem;padding:3px 6px}
 .stitems.ops{flex-direction:row;flex-wrap:wrap}
 .bv-sum{font-size:1.25rem;font-weight:700;margin-bottom:4px}
 .bv-row.noop .bv-n{color:var(--warn)}
+
+.cdesc{display:block;font-size:.75rem;font-weight:500;color:var(--muted);margin-top:1px}
+.sug button .cdesc{font-size:.78rem}

@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '21';
+const VERSION = '22';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -34,6 +34,21 @@ const press = id => S.presses.find(p => p.id === id);
 function log(id, what) {
   S.log.unshift({ t: Date.now(), id, what, who: S.who || '' });
   S.log = S.log.slice(0, 150);
+}
+/* firemní katalog (katalog.json na GitHubu) */
+let CAT_INFO = {}, CAT_OFFICIAL = new Set();
+const normP = s => (s || '').toLowerCase().replace(/[\s\-\/._]/g, '');
+const catDesc = c => CAT_INFO[c] || '';
+async function loadCatalogFile() {
+  let j = null;
+  try { const r = await fetch('katalog.json', { cache: 'no-cache' }); if (r.ok) { j = await r.json(); localStorage.setItem('lisy-katalog', JSON.stringify(j)); } } catch (e) {}
+  if (!j) try { j = JSON.parse(localStorage.getItem('lisy-katalog')); } catch (e) {}
+  if (!j || !Array.isArray(j.items)) return;
+  if (!Array.isArray(S.catHidden)) S.catHidden = [];
+  let added = 0;
+  j.items.forEach(([code, desc]) => { CAT_INFO[code] = desc; CAT_OFFICIAL.add(code); if (!S.catHidden.includes(code) && !S.catalog.includes(code)) { S.catalog.push(code); added++; } });
+  if (added) { S.catalog.sort((a, b) => a.localeCompare(b, 'cs')); save(); }
+  renderCatalog();
 }
 function addToCatalog(name) {
   if (name && !S.catalog.includes(name)) { S.catalog.push(name); S.catalog.sort((a, b) => a.localeCompare(b, 'cs')); return true; }
@@ -182,10 +197,11 @@ function renderHandover() {
   $('whoName').textContent = S.who || '—'; setAv($('whoAv'), S.who);
 }
 function renderCatalog() {
-  $('catCount').textContent = S.catalog.length ? S.catalog.length + ' výrobků' : '';
-  const q = ($('catSearch').value || '').toLowerCase();
-  $('catalog').innerHTML = S.catalog.map((c, i) => ({ c, i })).filter(x => !q || x.c.toLowerCase().includes(q))
-    .map(x => `<div class="row simple"><span>${esc(x.c)}</span><button class="sm del" data-catdel="${x.i}">Odebrat</button></div>`).join('')
+  const own = S.catalog.filter(c => !CAT_OFFICIAL.has(c)).length;
+  $('catCount').textContent = S.catalog.length ? S.catalog.length + ' výrobků' + (CAT_OFFICIAL.size ? ' · ' + (S.catalog.length - own) + ' firemních, ' + own + ' vlastních' : '') : '';
+  const q = ($('catSearch').value || '').toLowerCase(), nq = normP(q);
+  $('catalog').innerHTML = S.catalog.map((c, i) => ({ c, i })).filter(x => !q || normP(x.c).includes(nq) || catDesc(x.c).toLowerCase().includes(q)).slice(0, 300)
+    .map(x => `<div class="row simple"><span><b>${esc(x.c)}</b>${catDesc(x.c) ? `<small class="cdesc">${esc(catDesc(x.c))}</small>` : '<small class="cdesc">přidáno ručně</small>'}</span><button class="sm del" data-catdel="${x.i}">Odebrat</button></div>`).join('')
     || '<p class="hint">Katalog je prázdný. Výrobky přidáš tady nebo při zadávání k lisu.</p>';
   $('products').innerHTML = S.catalog.map(c => `<option value="${esc(c)}">`).join('');
 }
@@ -1070,11 +1086,12 @@ function openEditor(o) {
   $('dlg2').showModal();
 }
 function edFilter() {
-  const q = $('edP').value.trim().toLowerCase();
-  const items = S.catalog.filter(c => !q || c.toLowerCase().includes(q)).slice(0, 60);
+  const q = $('edP').value.trim().toLowerCase(), nq = normP(q);
+  const hit = c => !q || normP(c).includes(nq) || catDesc(c).toLowerCase().includes(q);
+  const items = S.catalog.filter(hit).sort((a, b) => (normP(b).startsWith(nq)) - (normP(a).startsWith(nq))).slice(0, 60);
   const exact = S.catalog.some(c => c.toLowerCase() === q);
   $('edList').innerHTML = items.length
-    ? items.map(c => `<button type="button" data-e="pick" data-v="${esc(c)}" class="${c.toLowerCase() === q ? 'sel' : ''}">${esc(c)}</button>`).join('')
+    ? items.map(c => `<button type="button" data-e="pick" data-v="${esc(c)}" class="${c.toLowerCase() === q ? 'sel' : ''}">${esc(c)}${catDesc(c) ? `<small class="cdesc">${esc(catDesc(c))}</small>` : ''}</button>`).join('')
     : `<div class="sug-empty">${S.catalog.length ? 'V katalogu nic neodpovídá, bude to nový výrobek.' : 'Katalog je prázdný, napiš název výrobku.'}</div>`;
   $('edList').hidden = exact && items.length === 1;
   $('edCatWrap').hidden = !q || exact;
@@ -1493,7 +1510,7 @@ document.addEventListener('click', e => {
     window.scrollTo(0, 0); return;
   }
   const d = e.target.closest('[data-catdel]');
-  if (d) { const i = +d.dataset.catdel; if (d.dataset.sure) { S.catalog.splice(i, 1); save(); renderCatalog(); } else { d.dataset.sure = 1; d.textContent = 'Opravdu?'; } }
+  if (d) { const i = +d.dataset.catdel; if (d.dataset.sure) { const c = S.catalog[i]; if (CAT_OFFICIAL.has(c)) { if (!Array.isArray(S.catHidden)) S.catHidden = []; S.catHidden.push(c); } S.catalog.splice(i, 1); save(); renderCatalog(); } else { d.dataset.sure = 1; d.textContent = 'Opravdu?'; } }
 });
 $('catForm').addEventListener('submit', e => {
   e.preventDefault(); const v = $('catNew').value.trim();
@@ -1741,6 +1758,7 @@ const s0 = getSession();
 if (s0) { S.who = s0.name; $('login').hidden = true; setAv($('userAv'), S.who); renderAll(); }
 (async () => {
   await loadUsers();
+  loadCatalogFile();
   const s = getSession();
   if (s && (USERS.some(u => u.name === s.name) || !USERS.length)) { S.who = s.name; $('login').hidden = true; setAv($('userAv'), S.who); fbBadge(); renderAll(); }
   else { try { lgUser = localStorage.getItem('lisy-last-user'); } catch (e) {} showLogin(lgUser && USERS.some(u => u.name === lgUser) ? 'pin' : undefined); }
