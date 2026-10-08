@@ -1,7 +1,7 @@
 'use strict';
 /* ============ Data ============ */
 const KEY = 'lisy-hala-v1';
-const VERSION = '20';
+const VERSION = '21';
 const H = 3600e3, M = 60e3;
 const PRESS_COUNT = 20;
 const SLOT_NAMES = ['Běží', 'Další 1', 'Další 2', 'Další 3', 'Další 4'];
@@ -444,7 +444,7 @@ function opNow(lisId, ts = Date.now()) { // kdo má lis teď (pro halu)
   }));
   return cur || next ? { cur, next } : null;
 }
-const rowName = (row, i) => row.op || 'Obsluha ' + (i + 1);
+const rowName = (row, i) => row.op || 'Řádek ' + (i + 1);
 function staffGuard(desc, fn) { // vedoucí mění jen s potvrzením
   if (isMistr()) { fn(); return; }
   $('sheet2').onclick = null; ED = null;
@@ -456,30 +456,52 @@ function staffGuard(desc, fn) { // vedoucí mění jen s potvrzením
   $('sheet2').onclick = e => { const b = e.target.closest('[data-sg]'); if (!b) return; closeDlg2(); if (b.dataset.sg === 'yes') fn(); };
 }
 function staffCommit(rec, msg) { rec.u = Date.now(); rec.by = S.who || ''; log(0, 'obsluha: ' + msg); save(); renderPlan(); renderGrid(); }
-function ensureRec(n) {
+function ensureRec() {
   const k = skey(PV.date, PV.shift);
   if (!S.staff[k]) S.staff[k] = { rows: [], splits: {}, u: Date.now(), by: S.who || '' };
-  const rec = S.staff[k];
-  while (rec.rows.length < n) rec.rows.push({ id: pid(), op: '', items: [] });
-  return rec;
+  return S.staff[k];
 }
-function unassigned(rec, act) {
+/* výrobky na směnu = úseky časové osy (při přestavbě dva výrobky na jednom lise) */
+function shiftProducts(act) {
   const out = [];
   act.forEach(({ p, segs }) => {
-    const its = rec ? rec.rows.flatMap(r => r.items.filter(i => i.lis === p.id)) : [];
-    const has = part => its.some(i => i.part === part || i.part === 'all');
-    if (segs.length > 1) { if (!has('a')) out.push({ lis: p.id, part: its.length ? 'a' : 'all' }); if (its.length && !has('b')) out.push({ lis: p.id, part: 'b' }); }
-    else if (!has('a')) out.push({ lis: p.id, part: 'all' });
+    if (segs.length > 1) { out.push({ lis: p.id, part: 'a' }); out.push({ lis: p.id, part: 'b' }); }
+    else out.push({ lis: p.id, part: 'all' });
   });
   return out;
 }
-function itemLabel(it, act) {
-  const a = act.find(x => x.p.id === it.lis), p = press(it.lis); if (!a) return `<b>${esc(p ? p.name : '?')}</b> · nic nejede`;
-  const s = a.segs;
-  if (it.part === 'a') return `<b>${esc(p.name)}</b> · ${esc(segText(s[0], 0, s))}`;
-  if (it.part === 'b') return `<b>${esc(p.name)}</b> · ${esc(s[1] ? segText(s[1], 1, s) : '')}`;
-  return `<b>${esc(p.name)}</b> · ${s.map((x, i) => esc(segText(x, i, s))).join(' → ')}`;
+const covers = (it, part) => it.part === part || it.part === 'all' || (part === 'all' && it.part === 'a');
+function unassigned(rec, act) {
+  const its = rec ? rec.rows.flatMap(r => r.items) : [];
+  return shiftProducts(act).filter(x => !its.some(i => i.lis === x.lis && covers(i, x.part)));
 }
+const pkey = x => x.lis + ':' + x.part;
+const fromKey = k => { const [l, part] = k.split(':'); return { lis: +l, part }; };
+function prodName(it, act) {
+  const a = act.find(x => x.p.id === it.lis); if (!a) return '—';
+  const s = a.segs;
+  if (it.part === 'b') return s[1] ? s[1].p : '—';
+  if (it.part === 'a' || s.length === 1) return s[0].p;
+  return s.map(x => x.p).join(' → ');
+}
+function prodSub(it, act) {
+  const a = act.find(x => x.p.id === it.lis), p = press(it.lis), ln = p ? p.name : '?';
+  if (!a) return ln + ' · teď nejede';
+  const s = a.segs, seg = it.part === 'b' ? s[1] : s[0];
+  let t;
+  if (!seg) t = '';
+  else if (it.part === 'all' && s.length > 1) t = 'přestavba ' + (s[1].atStart ? 'na začátku' : hhmm(s[1].from));
+  else if (seg.kind === 'next' || seg.kind === 'prep-next') t = seg.atStart ? 'nasadit na začátku směny' : 'od ' + hhmm(seg.from) + (seg.kind === 'prep-next' ? ', jen připravit' : '');
+  else if (seg.to) t = 'do ' + hhmm(seg.to);
+  else if (seg.kind === 'prep') t = seg.start ? 'rozjet' : 'připraveno';
+  else if (seg.kind === 'stop') t = 'zastaveno';
+  else t = 'celou směnu';
+  return ln + ' · ' + t;
+}
+const prodChip = (it, act, attrs, cls = '') => `<button class="pchip ${cls}" ${attrs}><b>${esc(prodName(it, act))}</b><small>${esc(prodSub(it, act))}</small></button>`;
+const itemLabel = (it, act) => `<b>${esc(prodName(it, act))}</b> · ${esc(prodSub(it, act))}`;
+const rowSummary = (row, act) => row.items.map(it => prodName(it, act)).join(' + ');
+let SEL = new Set();
 /* --- vykreslení --- */
 function renderTimeline() {
   const act = activeLisy(PV.date, PV.shift);
@@ -496,102 +518,84 @@ function renderTimeline() {
 function opLine(lisId, date, shift) {
   const rec = staffRec(date, shift); if (!rec) return '';
   const names = rec.rows.map((r, i) => ({ r, i })).filter(({ r }) => r.items.some(it => it.lis === lisId)).map(({ r, i }) => {
-    const it = r.items.find(x => x.lis === lisId); return esc(rowName(r, i)) + (it.part === 'a' ? ' (do změny)' : it.part === 'b' ? ' (po změně)' : '');
+    const it = r.items.find(x => x.lis === lisId); return esc(rowName(r, i)) + (it.part === 'a' ? ' (do přestavby)' : it.part === 'b' ? ' (po přestavbě)' : '');
   });
-  return names.length ? `<div class="tl-op">${ic('user')}${names.join(' · ')}</div>` : '<div class="tl-op none">nepřiřazeno</div>';
+  return names.length ? `<div class="tl-op">${ic('user')}${names.join(' · ')}</div>` : '<div class="tl-op none">nerozděleno</div>';
 }
 function renderStaff() {
-  const rec = staffRec(PV.date, PV.shift), act = activeLisy(PV.date, PV.shift), un = unassigned(rec, act);
-  const mistr = isMistr();
-  let h = `<div class="st-who">${mistr ? `${ic('user')}Jsi mistr, změny se ukládají hned.` : `${ic('user')}Změny potvrzuješ, rozdělení připravuje mistr.`}${rec ? ` <span class="hint">Naposledy upravil ${esc(rec.by || '?')} ${fmtEnd(rec.u)}</span>` : ''}</div>`;
-  if (!rec || !rec.rows.length) {
-    h += `<div class="st-start"><span class="flbl">Kolik bude obsluhy na ${SH[PV.shift].toLowerCase()}?</span>
-      <div class="quick">${[3, 4, 5, 6, 7, 8, 9, 10].map(n => `<button class="chip" data-st="count" data-n="${n}">${n}</button>`).join('')}</div>
-      <p class="hint">Na směně jede nebo pojede <b>${act.length}</b> lisů.</p></div>`;
-  } else {
-    h += `<div class="st-bar"><span>Obsluha: <b>${rec.rows.length}</b></span>
-      <button class="icb" data-st="minus" aria-label="Ubrat obsluhu">−</button><button class="icb" data-st="plus" aria-label="Přidat obsluhu">+</button>
-      <button class="sm" data-st="show">${ic('grid')}Ukázat obsluze</button></div>
-      <div class="list">${rec.rows.map((row, i) => {
-        const used = rec.rows.filter((r, j) => j !== i).map(r => r.op);
-        return `<div class="strow">
-        <div class="strow-h"><span class="qn">${i + 1}</span>
-          <select data-st="op" data-i="${i}" aria-label="Jméno obsluhy ${i + 1}"><option value="">— vyber jméno —</option>${S.ops.list.map(n => `<option value="${esc(n)}" ${n === row.op ? 'selected' : ''} ${used.includes(n) ? 'disabled' : ''}>${esc(n)}${used.includes(n) ? ' (už má řádek)' : ''}</option>`).join('')}<option value="__new">+ Napsat jiné jméno…</option></select></div>
-        <div class="stitems">${row.items.map((it, k) => `<button class="stit" data-st="item" data-i="${i}" data-k="${k}">${itemLabel(it, act)}</button>`).join('') || '<span class="hint">Zatím nic přiřazeno.</span>'}</div>
-        <button class="addq sm-add" data-st="add" data-i="${i}">${ic('plus')}Přidat lis</button>
-      </div>`; }).join('')}</div>`;
-  }
-  h += `<h2>Nepřiřazeno ${un.length ? `<span class="cnt2 red">${un.length}</span>` : ''}</h2>
-    <div class="stitems">${un.map(u => `<span class="stit un">${itemLabel(u, act)}</span>`).join('') || '<p class="hint">Všechno, co jede, má svou obsluhu.</p>'}</div>
-    <h2>Seznam obsluhy <span class="cnt">${S.ops.list.length}</span></h2>
-    <div class="stitems">${S.ops.list.map((n, i) => `<span class="opchip">${esc(n)}<button data-st="opdel" data-i="${i}" aria-label="Odebrat ${esc(n)}">${ic('x')}</button></span>`).join('')}</div>
+  const rec = staffRec(PV.date, PV.shift), act = activeLisy(PV.date, PV.shift), un = unassigned(rec, act), all = shiftProducts(act);
+  const rows = rec ? rec.rows : [];
+  SEL = new Set([...SEL].filter(k => un.some(u => pkey(u) === k)));
+  let h = `<div class="st-who">${ic('user')}${isMistr() ? 'Jsi mistr, změny se ukládají hned.' : 'Změny potvrzuješ, rozdělení připravuje mistr.'}${rec ? ` <span class="hint">Naposledy upravil ${esc(rec.by || '?')} ${fmtEnd(rec.u)}</span>` : ''}</div>`;
+  h += `<h2>1 · Výrobky na směnu <span class="cnt">${un.length ? 'nerozděleno ' + un.length + ' z ' + all.length : 'vše rozděleno'}</span></h2>
+    <p class="hint">Co jede a co pojede. Klepnutím vyber výrobky a dej je do řádku.</p>
+    <div class="pool">${un.map(u => prodChip(u, act, `data-st="sel" data-key="${pkey(u)}" aria-pressed="${SEL.has(pkey(u))}"`, SEL.has(pkey(u)) ? 'on' : '')).join('') || `<p class="hint">${all.length ? 'Všechny výrobky jsou rozdělené do řádků.' : 'V této směně nic nejede ani není naplánované.'}</p>`}</div>`;
+  if (SEL.size) h += `<div class="selbar"><span>Vybráno <b>${SEL.size}</b></span>
+      <button class="sm go" data-st="newrow">${ic('plus')}Nový řádek</button>
+      ${rows.map((r, i) => `<button class="sm" data-st="torow" data-i="${i}">Do řádku ${i + 1}</button>`).join('')}
+      <button class="sm" data-st="selclear">Zrušit výběr</button></div>`;
+  h += `<h2>2 · Řádky a obsluha <span class="cnt">${rows.length}</span></h2>`;
+  h += rows.length ? `<div class="list">${rows.map((row, i) => {
+    const used = rows.filter((r, j) => j !== i).map(r => r.op);
+    return `<div class="strow ${row.op ? '' : 'noop'}">
+      <div class="strow-h"><span class="qn">${i + 1}</span><b class="strow-sum">${esc(rowSummary(row, act)) || '<span class="hint">prázdný řádek</span>'}</b>
+        <button class="icb sm-x" data-st="rowdel" data-i="${i}" aria-label="Smazat řádek ${i + 1}">${ic('trash')}</button></div>
+      <div class="pool in-row">${row.items.map((it, k) => prodChip(it, act, `data-st="item" data-i="${i}" data-k="${k}"`)).join('')}</div>
+      <label class="strow-op"><span>${ic('user')}Obsluha</span><select data-st="op" data-i="${i}" aria-label="Obsluha řádku ${i + 1}"><option value="">— přiřadit obsluhu —</option>${S.ops.list.map(n => `<option value="${esc(n)}" ${n === row.op ? 'selected' : ''} ${used.includes(n) ? 'disabled' : ''}>${esc(n)}${used.includes(n) ? ' (má jiný řádek)' : ''}</option>`).join('')}<option value="__new">+ Napsat jiné jméno…</option></select></label>
+    </div>`; }).join('')}</div>
+    <button class="secondary" data-st="show" style="width:100%;margin-top:10px">${ic('grid')}Ukázat obsluze</button>`
+    : '<p class="hint">Zatím žádné řádky. Nahoře vyber výrobky a dej <b>Nový řádek</b>.</p>';
+  h += `<h2>Seznam obsluhy <span class="cnt">${S.ops.list.length}</span></h2>
+    <div class="stitems ops">${S.ops.list.map((n, i) => `<span class="opchip">${esc(n)}<button data-st="opdel" data-i="${i}" aria-label="Odebrat ${esc(n)}">${ic('x')}</button></span>`).join('')}</div>
     <form class="cat-add" id="opForm"><input type="text" id="opNew" placeholder="Přidat jméno" aria-label="Nové jméno obsluhy"><button class="primary" type="submit">Přidat</button></form>`;
   $('plStaff').innerHTML = h;
 }
-function staffAddPicker(i) {
-  const rec = staffRec(PV.date, PV.shift), act = activeLisy(PV.date, PV.shift), un = unassigned(rec, act);
-  ED = null; $('sheet2').onclick = null;
-  $('sheet2').innerHTML = `<div class="sh-head"><h3>Přidat k ${esc(rowName(rec.rows[i], i))}</h3><button class="x" data-sp="close" aria-label="Zavřít">${ic('x')}</button></div>
-    ${un.length ? `<p class="hint" style="margin:0">Vyber lisy, které bude obsluhovat. Lis s přestavbou se dá později rozdělit mezi dvě obsluhy.</p>
-    <div class="list" style="margin:0">${un.map((u, k) => `<label class="ps-row"><input type="checkbox" data-sk="${k}"><span>${itemLabel(u, act)}</span></label>`).join('')}</div>
-    <button class="primary" data-sp="ok">${ic('plus')}Přidat vybrané</button>` : '<p class="hint">Všechny lisy už někdo má. Lis od jiné obsluhy přesuneš klepnutím na něj.</p>'}`;
-  $('dlg2').showModal();
-  $('sheet2').onclick = e => {
-    const b = e.target.closest('[data-sp]'); if (!b) return;
-    if (b.dataset.sp === 'close') return closeDlg2();
-    const pick = un.filter((u, k) => $('sheet2').querySelector(`[data-sk="${k}"]`).checked); closeDlg2();
-    if (!pick.length) return;
-    const names = pick.map(u => press(u.lis).name).join(', ');
-    staffGuard(`Přidat <b>${esc(names)}</b> k <b>${esc(rowName(rec.rows[i], i))}</b>`, () => { rec.rows[i].items.push(...pick); staffCommit(rec, rowName(rec.rows[i], i) + ' + ' + names); });
-  };
-}
 function staffItemMenu(i, k) {
   const rec = staffRec(PV.date, PV.shift), act = activeLisy(PV.date, PV.shift), it = rec.rows[i].items[k], a = act.find(x => x.p.id === it.lis);
-  const canSplit = it.part === 'all' && a && a.segs.length > 1, ch = a && a.segs[1] ? splitTs(rec, it.lis, a.segs) : null;
+  const canSplit = it.part === 'all' && a && a.segs.length > 1;
   ED = null; $('sheet2').onclick = null;
-  $('sheet2').innerHTML = `<div class="sh-head"><h3>${esc(press(it.lis).name)}</h3><button class="x" data-sm="close" aria-label="Zavřít">${ic('x')}</button></div>
-    <div class="preview">${itemLabel(it, act)}<br><span class="hint">Má ${esc(rowName(rec.rows[i], i))}</span></div>
-    <span class="flbl">Přesunout k</span>
-    <div class="quick">${rec.rows.map((r, j) => j === i ? '' : `<button class="chip" data-sm="move" data-j="${j}">${esc(rowName(r, j))}</button>`).join('')}</div>
-    ${canSplit ? `<span class="flbl">Po přestavbě jiná obsluha</span>
-      <p class="hint" style="margin:0">${esc(segText(a.segs[0], 0, a.segs))} zůstane, ${esc(segText(a.segs[1], 1, a.segs))} dostane:</p>
-      <div class="quick">${rec.rows.map((r, j) => j === i ? '' : `<button class="chip" data-sm="split" data-j="${j}">${esc(rowName(r, j))}</button>`).join('')}</div>` : ''}
-    ${a && a.segs[1] ? `<label class="pe-f"><span class="flbl">Čas změny na lise</span><input type="time" id="smTime" value="${ch ? hhmm(ch) : ''}"></label><button class="secondary" data-sm="time">${ic('clock')}Uložit čas změny</button>` : ''}
-    ${it.part !== 'all' ? `<button class="secondary" data-sm="join">${ic('swap')}Spojit zpět (celý lis jedné obsluze)</button>` : ''}
-    <button class="secondary del-t" data-sm="del">${ic('trash')}Odebrat z rozdělení</button>`;
+  $('sheet2').innerHTML = `<div class="sh-head"><h3>${esc(prodName(it, act))}</h3><button class="x" data-sm="close" aria-label="Zavřít">${ic('x')}</button></div>
+    <div class="preview">${esc(prodSub(it, act))}<br><span class="hint">V řádku ${i + 1}${rec.rows[i].op ? ' · ' + esc(rec.rows[i].op) : ''}</span></div>
+    ${rec.rows.length > 1 ? `<span class="flbl">Přesunout do řádku</span>
+    <div class="quick">${rec.rows.map((r, j) => j === i ? '' : `<button class="chip" data-sm="move" data-j="${j}">${j + 1}${r.op ? ' · ' + esc(r.op) : ''}</button>`).join('')}</div>` : ''}
+    <button class="secondary" data-sm="new">${ic('plus')}Do nového řádku</button>
+    ${canSplit ? `<button class="secondary" data-sm="split">${ic('swap')}Rozdělit na ${esc(a.segs[0].p)} a ${esc(a.segs[1].p)}</button>` : ''}
+    <button class="secondary del-t" data-sm="del">${ic('back')}Vrátit mezi nerozdělené</button>`;
   $('dlg2').showModal();
   $('sheet2').onclick = e => {
     const b = e.target.closest('[data-sm]'); if (!b) return;
-    const act2 = b.dataset.sm; if (act2 === 'close') return closeDlg2();
-    const j = +b.dataset.j, lisN = press(it.lis).name, from = rowName(rec.rows[i], i), to = rec.rows[j] ? rowName(rec.rows[j], j) : '';
-    const tm = $('smTime') ? $('smTime').value : '';
+    const k2 = b.dataset.sm; if (k2 === 'close') return closeDlg2();
+    const j = +b.dataset.j, nm = prodName(it, act);
     closeDlg2();
-    if (act2 === 'move') staffGuard(`Přesunout <b>${esc(lisN)}</b> od <b>${esc(from)}</b> k <b>${esc(to)}</b>`, () => { rec.rows[i].items.splice(k, 1); rec.rows[j].items.push(it); staffCommit(rec, lisN + ': ' + from + ' → ' + to); });
-    if (act2 === 'split') staffGuard(`<b>${esc(lisN)}</b>: do změny <b>${esc(from)}</b>, po změně <b>${esc(to)}</b>`, () => { it.part = 'a'; rec.rows[j].items.push({ lis: it.lis, part: 'b' }); staffCommit(rec, lisN + ' po změně → ' + to); });
-    if (act2 === 'join') staffGuard(`Celý <b>${esc(lisN)}</b> bude mít <b>${esc(from)}</b>`, () => { rec.rows.forEach(r => { r.items = r.items.filter(x => x.lis !== it.lis || x === it); }); it.part = 'all'; staffCommit(rec, lisN + ' celý → ' + from); });
-    if (act2 === 'del') staffGuard(`Odebrat <b>${esc(lisN)}</b> od <b>${esc(from)}</b>`, () => { rec.rows[i].items.splice(k, 1); staffCommit(rec, lisN + ' odebrán od ' + from); });
-    if (act2 === 'time' && tm) staffGuard(`Čas změny na <b>${esc(lisN)}</b>: <b>${tm}</b>`, () => { rec.splits = rec.splits || {}; rec.splits[it.lis] = tm; staffCommit(rec, lisN + ' změna v ' + tm); });
+    if (k2 === 'move') staffGuard(`Přesunout <b>${esc(nm)}</b> z řádku ${i + 1} do řádku ${j + 1}`, () => { rec.rows[i].items.splice(k, 1); rec.rows[j].items.push(it); staffCommit(rec, nm + ': řádek ' + (i + 1) + ' → ' + (j + 1)); });
+    if (k2 === 'new') staffGuard(`Dát <b>${esc(nm)}</b> do nového řádku`, () => { rec.rows[i].items.splice(k, 1); rec.rows.push({ id: pid(), op: '', items: [it] }); staffCommit(rec, nm + ' → nový řádek'); });
+    if (k2 === 'split') staffGuard(`Rozdělit <b>${esc(nm)}</b> na dva výrobky (druhý se vrátí mezi nerozdělené)`, () => { it.part = 'a'; staffCommit(rec, nm + ' rozděleno'); });
+    if (k2 === 'del') staffGuard(`Vrátit <b>${esc(nm)}</b> z řádku ${i + 1} mezi nerozdělené`, () => { rec.rows[i].items.splice(k, 1); staffCommit(rec, nm + ' vráceno'); });
   };
 }
 function staffShow() {
   const rec = staffRec(PV.date, PV.shift), act = activeLisy(PV.date, PV.shift);
   ED = null; $('sheet2').onclick = null;
   $('sheet2').innerHTML = `<div class="sh-head"><h3>${esc(shLabel(PV.date, PV.shift))}</h3><button class="x" data-ss="close" aria-label="Zavřít">${ic('x')}</button></div>
-    <div class="bigview">${rec.rows.map((row, i) => `<div class="bv-row"><div class="bv-n">${esc(rowName(row, i))}</div>
-      <div class="bv-it">${row.items.map(it => `<div>${itemLabel(it, act)}</div>`).join('') || '<div class="hint">—</div>'}</div></div>`).join('')}</div>`;
+    <div class="bigview">${rec.rows.map((row, i) => `<div class="bv-row ${row.op ? '' : 'noop'}"><div class="bv-n">${row.op ? esc(row.op) : 'Řádek ' + (i + 1) + ' · bez obsluhy'}</div>
+      <div class="bv-sum">${esc(rowSummary(row, act)) || '—'}</div>
+      <div class="bv-it">${row.items.map(it => `<div>${esc(prodSub(it, act))}</div>`).join('')}</div></div>`).join('')}</div>`;
   $('dlg2').showModal();
   $('sheet2').onclick = e => { if (e.target.closest('[data-ss]')) closeDlg2(); };
 }
 document.addEventListener('click', e => {
   const m = e.target.closest('[data-pm]');
   if (m) { PMODE = m.dataset.pm; renderPlan(); return; }
-  const b = e.target.closest('#plStaff [data-st]'); if (!b || b.tagName === 'SELECT') return;
+  const b = e.target.closest('#plStaff [data-st]'); if (!b || b.tagName === 'SELECT' || b.tagName === 'LABEL') return;
   const k = b.dataset.st, i = +b.dataset.i;
-  const rec = staffRec(PV.date, PV.shift);
-  if (k === 'count') { const n = +b.dataset.n; staffGuard(`Vytvořit rozdělení pro <b>${n}</b> obsluh na ${esc(shLabel(PV.date, PV.shift))}`, () => { const r = ensureRec(n); staffCommit(r, 'vytvořeno pro ' + n + ' obsluh'); }); }
-  if (k === 'plus') staffGuard('Přidat řádek obsluhy', () => { rec.rows.push({ id: pid(), op: '', items: [] }); staffCommit(rec, 'přidán řádek'); });
-  if (k === 'minus') { const last = rec.rows[rec.rows.length - 1]; staffGuard(`Ubrat poslední řádek <b>${esc(rowName(last, rec.rows.length - 1))}</b>${last.items.length ? ' i s ' + last.items.length + ' lisy (budou nepřiřazené)' : ''}`, () => { rec.rows.pop(); staffCommit(rec, 'ubrán řádek'); }); }
-  if (k === 'add') staffAddPicker(i);
+  let rec = staffRec(PV.date, PV.shift);
+  const act = () => activeLisy(PV.date, PV.shift);
+  const selItems = () => [...SEL].map(fromKey), selNames = () => selItems().map(x => prodName(x, act())).join(' + ');
+  if (k === 'sel') { const key = b.dataset.key; SEL.has(key) ? SEL.delete(key) : SEL.add(key); renderStaff(); return; }
+  if (k === 'selclear') { SEL.clear(); renderStaff(); return; }
+  if (k === 'newrow') staffGuard(`Nový řádek: <b>${esc(selNames())}</b>`, () => { rec = ensureRec(); rec.rows.push({ id: pid(), op: '', items: selItems() }); const n = selNames(); SEL.clear(); staffCommit(rec, 'nový řádek ' + n); });
+  if (k === 'torow') staffGuard(`Do řádku ${i + 1} přidat <b>${esc(selNames())}</b>`, () => { rec.rows[i].items.push(...selItems()); const n = selNames(); SEL.clear(); staffCommit(rec, 'řádek ' + (i + 1) + ' + ' + n); });
+  if (k === 'rowdel') { const row = rec.rows[i]; staffGuard(`Smazat řádek ${i + 1}${row.op ? ' (' + esc(row.op) + ')' : ''}${row.items.length ? '. Výrobky <b>' + esc(rowSummary(row, act())) + '</b> se vrátí mezi nerozdělené' : ''}`, () => { rec.rows.splice(i, 1); staffCommit(rec, 'smazán řádek ' + (i + 1)); }); }
   if (k === 'item') staffItemMenu(i, +b.dataset.k);
   if (k === 'show') staffShow();
   if (k === 'opdel') { const n = S.ops.list[i]; staffGuard(`Odebrat <b>${esc(n)}</b> ze seznamu obsluhy`, () => { S.ops.list.splice(i, 1); S.ops.u = Date.now(); save(); renderPlan(); }); }
@@ -600,7 +604,7 @@ document.addEventListener('change', e => {
   const s = e.target.closest('#plStaff select[data-st="op"]'); if (!s) return;
   const rec = staffRec(PV.date, PV.shift), i = +s.dataset.i, old = rec.rows[i].op;
   let v = s.value;
-  const apply = name => staffGuard(`Řádek ${i + 1}: <b>${esc(name || '—')}</b>${old ? ' místo ' + esc(old) : ''}`, () => { rec.rows[i].op = name; staffCommit(rec, 'řádek ' + (i + 1) + ' = ' + name); });
+  const apply = name => staffGuard(`Obsluha řádku ${i + 1} (${esc(rowSummary(rec.rows[i], activeLisy(PV.date, PV.shift)))}): <b>${esc(name || '—')}</b>${old ? ' místo ' + esc(old) : ''}`, () => { rec.rows[i].op = name; staffCommit(rec, 'řádek ' + (i + 1) + ' = ' + name); });
   if (v === '__new') {
     s.value = old;
     ED = null; $('sheet2').onclick = null;
